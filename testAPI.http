@@ -1,0 +1,38 @@
+### Variables
+@baseUrl = http://localhost:8000
+@nameHomer = Homer Simpson
+@nameMarge = Marge Simpson
+
+### 1. Tester si l'API est en ligne
+GET {{baseUrl}}/
+Accept: application/json
+
+### 2. Générer Homer (L'API appliquera le style Simpson automatiquement)
+POST {{baseUrl}}/generate
+Content-Type: application/json
+
+{
+    "character_name": "{{nameHomer}}",
+    "steps": 30,
+    "guidance_scale": 8.0,
+    "save_to_disk": true
+}
+
+### 3. Générer Marge (Paramètres par défaut)
+POST {{baseUrl}}/generate
+Content-Type: application/json
+
+{
+    "character_name": "{{nameMarge}}"
+}
+
+### 4. Générer Marge (Paramètres par défaut)
+POST {{baseUrl}}/generate
+Content-Type: application/json
+
+{
+    "character_name": "Test Rapide",
+    "steps": 4,
+    "guidance_scale": 7.0,
+    "save_to_disk": true
+}
