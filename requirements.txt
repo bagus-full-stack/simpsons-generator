@@ -1,0 +1,31 @@
+# Dépendances complètes (API + worker). torch n'est volontairement pas listé
+# ici : installez-le d'abord pour votre plateforme (voir README §Installation),
+# sinon pip installerait une roue CPU qui écraserait le build CUDA de l'image
+# Docker (basée sur pytorch/pytorch:*-cuda*).
+#
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   pip install -r requirements.txt
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+slowapi==0.1.9
+prometheus-client==0.21.1
+sentry-sdk[fastapi]==2.19.2
+
+redis==5.2.1
+rq==2.1.0
+boto3==1.35.90
+
+diffusers==0.31.0
+transformers==4.47.1
+accelerate==1.2.1
+peft==0.14.0
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+pillow==11.0.0

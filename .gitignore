@@ -13,6 +13,25 @@ bin/
 lib/
 include/
 
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Base de données locale (SQLite dev)
+*.db
+*.db-journal
+
+# Images générées (jamais dans Git — voir app/storage.py)
+generated_simpsons/*
+!generated_simpsons/.gitkeep
+
+# Données d'entraînement téléchargées
+training/train_data/
+training/train_text_to_image_lora.py
+
 # Build et Sortie Next.js
 .next/
 out/

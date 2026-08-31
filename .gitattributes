@@ -1,0 +1,11 @@
+# Poids de modèle et checkpoints d'entraînement — à suivre via Git LFS (nécessite
+# `git lfs install` une fois par machine). Ceci ne réécrit PAS l'historique
+# existant : les fichiers déjà committés en Git normal (simpsons_lora_results/)
+# restent gonflés dans l'historique tant qu'une migration explicite (ex. `git lfs
+# migrate import`, ou `git filter-repo`) n'est pas lancée séparément — c'est une
+# opération destructive qui réécrit les SHA et nécessite un accord explicite,
+# volontairement pas faite ici.
+*.safetensors filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text
+*.pt filter=lfs diff=lfs merge=lfs -text
+*.pkl filter=lfs diff=lfs merge=lfs -text

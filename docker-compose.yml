@@ -1,0 +1,67 @@
+# Stack locale "prod-like".
+#
+#   docker compose up --build                 # API seule, file inline (comportement d'origine)
+#   docker compose --profile async up --build  # + Redis/Postgres/worker séparé (QUEUE_BACKEND=rq côté .env)
+#
+# Nécessite le NVIDIA Container Toolkit pour exposer le GPU aux conteneurs.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: simpsons-generator:latest
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./simpsons_lora_results:/srv/simpsons_lora_results:ro
+      - generated_data:/srv/generated_simpsons
+      - db_data:/srv/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  worker:
+    image: simpsons-generator:latest
+    env_file: .env
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - ./simpsons_lora_results:/srv/simpsons_lora_results:ro
+      - generated_data:/srv/generated_simpsons
+      - db_data:/srv/data
+    depends_on: [redis]
+    profiles: ["async"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    profiles: ["async"]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: simpsons
+      POSTGRES_USER: simpsons
+      POSTGRES_PASSWORD: simpsons
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    profiles: ["async"]
+
+volumes:
+  generated_data:
+  db_data:
+  pg_data:

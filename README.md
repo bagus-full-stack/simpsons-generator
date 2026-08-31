@@ -39,7 +39,7 @@ Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diff
 * **Traitement d'image :** OpenCV, PIL, NumPy.
 
 ### Frontend (TypeScript)
-* **Framework :** Next.js 14 (App Router).
+* **Framework :** Next.js 16 (App Router).
 * **Styling :** Tailwind CSS (Design Responsive & Thème Simpson).
 * **Icônes :** Lucide React.
 * **Interactions :** Canvas API (Dessin), MediaDevices API (Webcam).
@@ -71,15 +71,48 @@ python -m venv .venv
 # (Sur Mac/Linux : source .venv/bin/activate)
 
 # 3. Installer PyTorch avec support CUDA (GPU)
-pip install torch torchvision torchaudio --index-url [https://download.pytorch.org/whl/cu121](https://download.pytorch.org/whl/cu121)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 # 4. Installer les dépendances du projet
-pip install fastapi uvicorn python-multipart transformers accelerate peft diffusers opencv-python
+pip install -r requirements.txt
 
+# 5. Copier la config d'exemple et l'ajuster si besoin (CORS, clé API, stockage...)
+copy .env.example .env
 
+# 6. Lancer l'API
+uvicorn app.main:app --reload
+```
 
+Par défaut (`QUEUE_BACKEND=inline` dans `.env.example`), tout tourne dans un seul
+process comme avant, sans dépendance externe. Pour activer la file d'attente
+asynchrone (Redis + worker séparé, scalable indépendamment de l'API) :
 
-Voici le contenu converti au format Markdown (`.md`), optimisé pour la clarté et la structure.
+```bash
+docker compose --profile async up --build
+```
+
+Voir `.env.example` pour le détail de chaque variable (modèle, stockage
+local/S3, modération, rate limit, Sentry...).
+
+### Tests
+
+```bash
+pip install -r requirements-dev.txt
+SKIP_MODEL_LOAD=1 pytest
+```
+
+---
+
+## 🖥️ Frontend
+
+Dans `simpson-front/` :
+
+```bash
+npm install
+copy .env.local.example .env.local
+npm run dev
+```
+
 
 ---
 
@@ -100,22 +133,38 @@ L'interface est divisée en **4 onglets intuitifs** :
 
 ```plaintext
 .
-├── simpsonsGenerator/          # --- BACKEND ---
-│   ├── .venv/                  # Environnement virtuel Python
-│   ├── generated_simpsons/     # Stockage des images générées
-│   ├── models/                 # Modèles téléchargés
-│   ├── simpsons_lora_results/  # Dossier contenant votre LoRA
-│   │   └── pytorch_lora_weights.safetensors
-│   └── simpsonGeneratorAPI.py  # Point d'entrée de l'API
+├── app/                         # --- BACKEND (API) ---
+│   ├── main.py                  # Point d'entrée : uvicorn app.main:app
+│   ├── config.py                # Configuration (variables d'environnement)
+│   ├── pipelines.py             # Chargement des pipelines Stable Diffusion
+│   ├── generation.py            # Logique de génération (prompt, canny, inpaint...)
+│   ├── jobs.py                  # Exécution d'un job (génération + modération + stockage)
+│   ├── queue_backend.py         # File d'attente : inline (défaut) ou Redis/RQ
+│   ├── worker.py                # Worker RQ séparé : python -m app.worker
+│   ├── storage.py               # Stockage des images : local (défaut) ou S3
+│   ├── security.py              # Auth par clé API + rate limiting
+│   ├── moderation.py            # Filtre de contenu (prompt + NSFW image)
+│   ├── db.py / models_db.py     # Base de données des jobs (SQLite ou Postgres)
+│   └── routes/jobs.py           # Endpoints /jobs/*
 │
-└── simpson-front/              # --- FRONTEND ---
-    ├── public/
-    ├── src/
-    │   └── app/
-    │       └── page.tsx        # Code principal de l'interface
+├── tests/                       # Tests (SKIP_MODEL_LOAD=1, pas de GPU requis)
+├── docker/Dockerfile            # Image API/worker (GPU, CUDA)
+├── docker-compose.yml           # Stack locale (API, + Redis/Postgres/worker en option)
+│
+├── training/                    # Fine-tuning du LoRA (hors service de prod)
+│   ├── train_simpsons_lora.py   # Script d'entraînement (remplace les notebooks)
+│   ├── simpsonGenerator*.ipynb  # Notebooks d'origine, conservés pour référence
+│   └── prompts.md               # Bibliothèque de prompts d'entraînement
+│
+├── simpsons_lora_results/       # Poids LoRA entraînés, lus par app/pipelines.py
+├── generated_simpsons/          # Stockage local des images (backend "local")
+│
+└── simpson-front/               # --- FRONTEND ---
+    ├── app/
+    │   ├── page.tsx              # Interface (4 modes, galerie, caméra, éditeur)
+    │   └── lib/api.ts            # Client API (NEXT_PUBLIC_API_URL, polling des jobs)
     ├── package.json
     └── tailwind.config.ts
-
 ```
 
 ---
@@ -137,7 +186,3 @@ Ce projet est réalisé à des fins éducatives.
 
 * **Stable Diffusion :** CreativeML Open RAIL-M.
 * **Style Simpsons :** Fan art, usage non commercial recommandé.
-
----
-
-Souhaitez-vous que j'ajoute des sections spécifiques pour l'installation des dépendances ou que je peaufine la mise en forme du tableau ?

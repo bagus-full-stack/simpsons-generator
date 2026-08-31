@@ -1,0 +1,22 @@
+# Dépendances pour le lint/tests en CI — volontairement indépendant de
+# requirements.txt : pas de torch/diffusers/opencv/boto3/redis ici. Les tests
+# tournent avec SKIP_MODEL_LOAD=1 (voir app/config.py), qui empêche
+# app.pipelines de jamais importer torch/diffusers, donc ce lot suffit pour
+# valider auth, config, modération et routing sans télécharger de GPU stack.
+# Le déploiement réel (API/worker) installe requirements.txt, pas ce fichier.
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+sqlalchemy==2.0.36
+slowapi==0.1.9
+prometheus-client==0.21.1
+pillow==11.0.0
+numpy==1.26.4
+
+pytest==8.3.4
+httpx==0.28.1
+ruff==0.8.4

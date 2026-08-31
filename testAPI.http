@@ -1,38 +1,47 @@
 ### Variables
 @baseUrl = http://localhost:8000
+@apiKey =
 @nameHomer = Homer Simpson
 @nameMarge = Marge Simpson
 
 ### 1. Tester si l'API est en ligne
-GET {{baseUrl}}/
+GET {{baseUrl}}/health
 Accept: application/json
 
-### 2. Générer Homer (L'API appliquera le style Simpson automatiquement)
-POST {{baseUrl}}/generate
+### 2. Tester si les pipelines sont chargées
+GET {{baseUrl}}/health/ready
+Accept: application/json
+
+### 3. Déposer un job de génération texte (Homer)
+# Répond immédiatement avec un job_id + statut "queued"/"running", pas l'image.
+POST {{baseUrl}}/jobs/text
 Content-Type: application/json
+X-API-Key: {{apiKey}}
 
 {
     "character_name": "{{nameHomer}}",
     "steps": 30,
-    "guidance_scale": 8.0,
-    "save_to_disk": true
+    "turbo_mode": false
 }
 
-### 3. Générer Marge (Paramètres par défaut)
-POST {{baseUrl}}/generate
+### 4. Déposer un job de génération texte (Marge, paramètres par défaut)
+POST {{baseUrl}}/jobs/text
 Content-Type: application/json
+X-API-Key: {{apiKey}}
 
 {
     "character_name": "{{nameMarge}}"
 }
 
-### 4. Générer Marge (Paramètres par défaut)
-POST {{baseUrl}}/generate
-Content-Type: application/json
+### 5. Consulter le statut d'un job — remplacer {job_id} par la réponse de 3. ou 4.
+GET {{baseUrl}}/jobs/{job_id}
+Accept: application/json
+X-API-Key: {{apiKey}}
 
-{
-    "character_name": "Test Rapide",
-    "steps": 4,
-    "guidance_scale": 7.0,
-    "save_to_disk": true
-}
+### 6. Historique (jobs terminés, paginé)
+GET {{baseUrl}}/jobs?limit=20
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+### 7. Métriques Prometheus
+GET {{baseUrl}}/metrics
