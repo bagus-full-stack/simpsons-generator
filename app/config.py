@@ -27,7 +27,15 @@ class Settings(BaseSettings):
     skip_model_load: bool = False
 
     # --- Modèle ---
-    base_model_id: str = "runwayml/stable-diffusion-v1-5"
+    # SDXL (1024x1024 natif) : bien meilleure qualité que SD1.5, tout en gardant
+    # des temps de génération courts grâce à lcm_lora_id (voir pipelines.py).
+    base_model_id: str = "stabilityai/stable-diffusion-xl-base-1.0"
+    # Fix communautaire du VAE SDXL de base, qui produit des images noires/NaN en
+    # fp16 (le dtype utilisé sur CUDA). Laisser vide pour utiliser le VAE du modèle de base.
+    vae_model_id: str | None = "madebyollin/sdxl-vae-fp16-fix"
+    lcm_lora_id: str = "latent-consistency/lcm-lora-sdxl"
+    controlnet_model_id: str = "diffusers/controlnet-canny-sdxl-1.0"
+    image_resolution: int = 1024
     lora_dir: Path = BASE_DIR / "simpsons_lora_results"
     device: str = "auto"  # "auto" | "cuda" | "cpu"
 

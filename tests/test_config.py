@@ -17,3 +17,11 @@ def test_defaults_are_dev_friendly():
     assert settings.environment == "development"
     assert settings.queue_backend == "inline"
     assert settings.storage_backend == "local"
+
+
+def test_defaults_target_sdxl():
+    settings = Settings()
+    assert settings.base_model_id == "stabilityai/stable-diffusion-xl-base-1.0"
+    assert settings.lcm_lora_id == "latent-consistency/lcm-lora-sdxl"
+    assert settings.controlnet_model_id == "diffusers/controlnet-canny-sdxl-1.0"
+    assert settings.image_resolution == 1024

@@ -41,11 +41,13 @@ log = logging.getLogger("train_simpsons_lora")
 
 CURRENT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CURRENT_DIR.parent
+# Script SDXL dédié (pas train_text_to_image_lora.py, qui est pour SD1.5) :
+# gère le double text encoder et les embeddings "pooled" propres à SDXL.
 TRAIN_SCRIPT_URL = (
     "https://raw.githubusercontent.com/huggingface/diffusers/main/"
-    "examples/text_to_image/train_text_to_image_lora.py"
+    "examples/text_to_image/train_text_to_image_lora_sdxl.py"
 )
-TRAIN_SCRIPT_PATH = CURRENT_DIR / "train_text_to_image_lora.py"
+TRAIN_SCRIPT_PATH = CURRENT_DIR / "train_text_to_image_lora_sdxl.py"
 
 # Prompts utilisés en rotation pour légender les images du dataset : les varier
 # (plutôt qu'une légende unique) aide le LoRA à généraliser le style plutôt que
@@ -62,14 +64,21 @@ DEFAULT_PROMPTS = [
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Fine-tuning LoRA Stable Diffusion — style Simpsons")
 
-    p.add_argument("--base-model", default="runwayml/stable-diffusion-v1-5")
+    p.add_argument("--base-model", default="stabilityai/stable-diffusion-xl-base-1.0")
+    p.add_argument(
+        "--pretrained-vae-model",
+        default="madebyollin/sdxl-vae-fp16-fix",
+        help="Fix communautaire du VAE SDXL (NaN en fp16). Vide pour utiliser le VAE du modèle de base.",
+    )
     p.add_argument("--dataset-slug", default="kostastokis/simpsons-faces", help="Dataset Kaggle (kagglehub)")
     p.add_argument("--train-data-dir", default=str(CURRENT_DIR / "train_data"))
     p.add_argument("--output-dir", default=str(REPO_ROOT / "simpsons_lora_results"),
                     help="Par défaut : simpsons_lora_results/ à la racine du dépôt, lu par l'API de service.")
 
-    p.add_argument("--resolution", type=int, default=512)
-    p.add_argument("--train-batch-size", type=int, default=2)
+    p.add_argument("--resolution", type=int, default=1024)
+    # SDXL est nettement plus lourd que SD1.5 : batch_size=1 + gradient checkpointing
+    # + adam 8-bit (voir run_training) pour tenir sur un GPU Kaggle (T4/P100, 16 Go).
+    p.add_argument("--train-batch-size", type=int, default=1)
     p.add_argument("--gradient-accumulation-steps", type=int, default=4)
     p.add_argument("--max-train-steps", type=int, default=3000)
     p.add_argument("--learning-rate", type=float, default=5e-5)
@@ -176,6 +185,10 @@ def run_training(args: argparse.Namespace) -> int:
         "--random_flip",
         f"--train_batch_size={args.train_batch_size}",
         f"--gradient_accumulation_steps={args.gradient_accumulation_steps}",
+        # Nécessaires pour faire tenir un entraînement SDXL sur un GPU 16 Go
+        # (Kaggle T4/P100) — inutiles mais inoffensifs sur un GPU plus large.
+        "--gradient_checkpointing",
+        "--use_8bit_adam",
         f"--max_train_steps={args.max_train_steps}",
         f"--learning_rate={args.learning_rate}",
         f"--lr_scheduler={args.lr_scheduler}",
@@ -187,6 +200,8 @@ def run_training(args: argparse.Namespace) -> int:
         f"--validation_epochs={args.validation_epochs}",
         f"--seed={args.seed}",
     ]
+    if args.pretrained_vae_model:
+        cmd.append(f"--pretrained_vae_model_name_or_path={args.pretrained_vae_model}")
     if args.resume_from_checkpoint:
         cmd.append(f"--resume_from_checkpoint={args.resume_from_checkpoint}")
 

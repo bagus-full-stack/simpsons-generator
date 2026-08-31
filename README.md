@@ -4,7 +4,7 @@
 
 Une application Full-Stack complète permettant de générer des images dans le style des **Simpsons** en utilisant l'intelligence artificielle générative.
 
-Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diffusion (LoRA, LCM, ControlNet, Inpainting) et un **Frontend moderne (Next.js)** offrant une expérience utilisateur fluide avec galerie, caméra et éditeur graphique.
+Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diffusion XL (LoRA, LCM, ControlNet, Inpainting) et un **Frontend moderne (Next.js)** offrant une expérience utilisateur fluide avec galerie, caméra et éditeur graphique.
 
 ---
 
@@ -32,10 +32,10 @@ Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diff
 * **Framework :** FastAPI (API REST asynchrone).
 * **Core IA :** PyTorch (CUDA), Diffusers (Hugging Face).
 * **Modèles :**
-    * Stable Diffusion v1.5 (Base).
-    * LoRA personnalisé (Style Simpsons).
-    * LCM-LoRA (Accélération Latent Consistency).
-    * ControlNet Canny (Détection de contours).
+    * Stable Diffusion XL 1.0 (Base, 1024x1024 natif).
+    * LoRA personnalisé (Style Simpsons, entraîné sur base SDXL).
+    * LCM-LoRA SDXL (Accélération Latent Consistency).
+    * ControlNet Canny SDXL (Détection de contours).
 * **Traitement d'image :** OpenCV, PIL, NumPy.
 
 ### Frontend (TypeScript)
@@ -49,7 +49,7 @@ Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diff
 ## 📋 Prérequis
 
 * **Système :** Windows (recommandé) ou Linux.
-* **GPU :** Carte graphique NVIDIA recommandée (min 4Go VRAM) avec pilotes à jour.
+* **GPU :** Carte graphique NVIDIA recommandée (min 6-8Go VRAM pour SDXL) avec pilotes à jour.
 * **Logiciels :**
     * **Python 3.10** (Impératif pour la compatibilité des dépendances IA).
     * **Node.js** (v18 ou supérieur).

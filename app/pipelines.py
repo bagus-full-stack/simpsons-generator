@@ -1,10 +1,12 @@
-"""Chargement des pipelines Stable Diffusion.
+"""Chargement des pipelines Stable Diffusion XL.
 
 Repris de l'ancien simpsonGeneratorAPI.py (mêmes 4 pipelines, mêmes adaptateurs
-LoRA simpson + LCM), avec les chemins et le modèle de base lus depuis la config
-au lieu d'être codés en dur. torch/diffusers ne sont importés qu'à l'intérieur
-de load_pipelines(), pour que le reste de l'API (et les tests) puisse s'importer
-sans dépendre d'un GPU ni d'un torch installé.
+LoRA simpson + LCM), migré de SD1.5 vers SDXL (meilleure qualité, 1024x1024
+natif) tout en gardant les mêmes temps de génération grâce à LCM-LoRA-SDXL.
+Les chemins et modèles sont lus depuis la config au lieu d'être codés en dur.
+torch/diffusers ne sont importés qu'à l'intérieur de load_pipelines(), pour que
+le reste de l'API (et les tests) puisse s'importer sans dépendre d'un GPU ni
+d'un torch installé.
 """
 
 from __future__ import annotations
@@ -17,6 +19,12 @@ from .config import get_settings
 log = logging.getLogger(__name__)
 
 ML_MODELS: dict = {}
+
+# Adaptateurs LoRA effectivement chargés sur text_pipe (et donc partagés par les
+# autres pipelines, qui réutilisent les mêmes composants) — "simpson" peut être
+# absent si les poids sont introuvables ou incompatibles (ex: encore un LoRA
+# SD1.5 le temps de terminer le réentraînement sur base SDXL).
+LOADED_ADAPTERS: list[str] = []
 
 MODE_TO_PIPELINE_KEY = {
     "text": "text_pipe",
@@ -35,13 +43,14 @@ def load_pipelines() -> None:
 
     import torch
     from diffusers import (
+        AutoencoderKL,
         ControlNetModel,
         DPMSolverMultistepScheduler,
         LCMScheduler,
-        StableDiffusionControlNetPipeline,
-        StableDiffusionImg2ImgPipeline,
-        StableDiffusionInpaintPipeline,
-        StableDiffusionPipeline,
+        StableDiffusionXLControlNetPipeline,
+        StableDiffusionXLImg2ImgPipeline,
+        StableDiffusionXLInpaintPipeline,
+        StableDiffusionXLPipeline,
     )
 
     device = settings.device
@@ -51,20 +60,34 @@ def load_pipelines() -> None:
 
     log.info("Chargement des modèles sur %s...", device)
 
-    text_pipe = StableDiffusionPipeline.from_pretrained(
-        settings.base_model_id, torch_dtype=dtype, safety_checker=None
-    ).to(device)
+    pipe_kwargs: dict = {"torch_dtype": dtype}
+    if settings.vae_model_id:
+        pipe_kwargs["vae"] = AutoencoderKL.from_pretrained(settings.vae_model_id, torch_dtype=dtype)
 
+    text_pipe = StableDiffusionXLPipeline.from_pretrained(settings.base_model_id, **pipe_kwargs).to(device)
+
+    LOADED_ADAPTERS.clear()
     lora_weights = settings.lora_dir / "pytorch_lora_weights.safetensors"
     if lora_weights.exists():
-        text_pipe.load_lora_weights(
-            str(settings.lora_dir), weight_name="pytorch_lora_weights.safetensors", adapter_name="simpson"
-        )
+        try:
+            text_pipe.load_lora_weights(
+                str(settings.lora_dir), weight_name="pytorch_lora_weights.safetensors", adapter_name="simpson"
+            )
+            LOADED_ADAPTERS.append("simpson")
+        except Exception:
+            log.exception(
+                "Échec du chargement du LoRA Simpsons (%s) : incompatible avec %s ? "
+                "(ex: encore un LoRA SD1.5 le temps de réentraîner sur SDXL) — "
+                "le style Simpsons ne sera pas appliqué.",
+                lora_weights,
+                settings.base_model_id,
+            )
     else:
         log.warning("Poids LoRA introuvables (%s) : le style Simpsons ne sera pas appliqué.", lora_weights)
 
-    text_pipe.load_lora_weights("latent-consistency/lcm-lora-sdv1-5", adapter_name="lcm")
-    text_pipe.set_adapters(["simpson", "lcm"], adapter_weights=[1.0, 0.0])
+    text_pipe.load_lora_weights(settings.lcm_lora_id, adapter_name="lcm")
+    LOADED_ADAPTERS.append("lcm")
+    text_pipe.set_adapters(LOADED_ADAPTERS, adapter_weights=[0.0 for _ in LOADED_ADAPTERS])
 
     dpm_scheduler = DPMSolverMultistepScheduler.from_config(text_pipe.scheduler.config)
     lcm_scheduler = LCMScheduler.from_config(text_pipe.scheduler.config)
@@ -77,26 +100,17 @@ def load_pipelines() -> None:
 
     configure_pipe(text_pipe)
 
-    img_pipe = configure_pipe(StableDiffusionImg2ImgPipeline(**text_pipe.components))
-    inpaint_pipe = configure_pipe(StableDiffusionInpaintPipeline(**text_pipe.components))
+    img_pipe = configure_pipe(StableDiffusionXLImg2ImgPipeline(**text_pipe.components))
+    inpaint_pipe = configure_pipe(StableDiffusionXLInpaintPipeline(**text_pipe.components))
 
-    log.info("Chargement de ControlNet Canny...")
-    controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-canny", torch_dtype=dtype).to(device)
+    log.info("Chargement de ControlNet Canny (SDXL)...")
+    controlnet = ControlNetModel.from_pretrained(settings.controlnet_model_id, torch_dtype=dtype).to(device)
     canny_pipe = configure_pipe(
-        StableDiffusionControlNetPipeline(
-            controlnet=controlnet,
-            vae=text_pipe.vae,
-            text_encoder=text_pipe.text_encoder,
-            tokenizer=text_pipe.tokenizer,
-            unet=text_pipe.unet,
-            scheduler=text_pipe.scheduler,
-            safety_checker=None,
-            feature_extractor=text_pipe.feature_extractor,
-        ).to(device)
+        StableDiffusionXLControlNetPipeline(controlnet=controlnet, **text_pipe.components).to(device)
     )
 
     ML_MODELS.update(text_pipe=text_pipe, img_pipe=img_pipe, canny_pipe=canny_pipe, inpaint_pipe=inpaint_pipe)
-    log.info("Pipelines prêtes.")
+    log.info("Pipelines prêtes (adaptateurs chargés : %s).", LOADED_ADAPTERS)
 
 
 def get_pipeline(mode: str):
@@ -109,8 +123,16 @@ def get_pipeline(mode: str):
     return pipe
 
 
+def get_loaded_adapters() -> list[str]:
+    """Adaptateurs LoRA effectivement disponibles sur les pipelines chargées
+    (voir LOADED_ADAPTERS) — utilisé par generation.py pour n'activer que ce
+    qui a réellement été chargé (ex: "simpson" peut être absent)."""
+    return LOADED_ADAPTERS
+
+
 def unload_pipelines() -> None:
     ML_MODELS.clear()
+    LOADED_ADAPTERS.clear()
     if os.environ.get("SKIP_MODEL_LOAD") == "1":
         return
     try:

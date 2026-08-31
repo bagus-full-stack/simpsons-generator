@@ -11,7 +11,8 @@ import io
 import numpy as np
 from PIL import Image, ImageOps
 
-from .pipelines import get_pipeline
+from .config import get_settings
+from .pipelines import get_loaded_adapters, get_pipeline
 
 NEGATIVE_PROMPT = "realistic, photo, ugly, deformed, blurry, bad anatomy"
 
@@ -21,13 +22,15 @@ def build_prompt(character_or_prompt: str) -> str:
 
 
 def process_image_bytes(data: bytes) -> Image.Image:
+    resolution = get_settings().image_resolution
     img = Image.open(io.BytesIO(data)).convert("RGB")
-    return ImageOps.fit(img, (512, 512), method=Image.Resampling.LANCZOS)
+    return ImageOps.fit(img, (resolution, resolution), method=Image.Resampling.LANCZOS)
 
 
 def process_mask_bytes(data: bytes) -> Image.Image:
+    resolution = get_settings().image_resolution
     mask = Image.open(io.BytesIO(data)).convert("L")
-    return ImageOps.fit(mask, (512, 512), method=Image.Resampling.LANCZOS)
+    return ImageOps.fit(mask, (resolution, resolution), method=Image.Resampling.LANCZOS)
 
 
 def get_canny_image(image: Image.Image) -> Image.Image:
@@ -58,12 +61,15 @@ def generate_image(
     pipe = get_pipeline(mode)
     full_prompt = build_prompt(prompt)
 
+    adapters = get_loaded_adapters()
+    weight_by_adapter = {"simpson": 1.0, "lcm": 1.0 if turbo else 0.0}
+    if adapters:
+        pipe.set_adapters(adapters, adapter_weights=[weight_by_adapter[a] for a in adapters])
+
     if turbo:
-        pipe.set_adapters(["simpson", "lcm"], adapter_weights=[1.0, 1.0])
         pipe.scheduler = pipe.scheduler_lcm
         actual_steps, actual_guidance = 6, 1.5
     else:
-        pipe.set_adapters(["simpson", "lcm"], adapter_weights=[1.0, 0.0])
         pipe.scheduler = pipe.scheduler_dpm
         actual_steps, actual_guidance = steps, 7.5
 
@@ -93,7 +99,8 @@ def generate_image(
                 strength=0.95,
             )
         else:
-            args.update(height=512, width=512)
+            resolution = get_settings().image_resolution
+            args.update(height=resolution, width=resolution)
 
         return pipe(**args).images[0]
     finally:
