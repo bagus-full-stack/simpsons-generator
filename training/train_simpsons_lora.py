@@ -15,8 +15,15 @@ Usage :
     python train_simpsons_lora.py --skip-dataset-prep  # dataset déjà préparé dans --train-data-dir
     python train_simpsons_lora.py --resume-from-checkpoint latest
 
+Dataset : Norod78/simpsons-blip-captions (Hugging Face, 755 images captionnées
+par BLIP, scènes complètes — pas que des visages). Les images sources font
+512x512 : une passe "hires fix" (img2img SDXL à faible denoise, voir
+upscale_dataset()) les porte à --resolution avant l'entraînement, pour
+apporter un vrai détail plausible plutôt que le simple redimensionnement
+bilinéaire que ferait de toute façon le script d'entraînement sinon.
+
 Prérequis (si --install-deps n'est pas utilisé) :
-    pip install accelerate transformers diffusers peft datasets kagglehub pillow requests torch
+    pip install accelerate transformers diffusers peft datasets pillow requests torch
     (+ bitsandbytes / xformers optionnels pour réduire l'empreinte mémoire GPU)
 
 Le LoRA entraîné est écrit dans --output-dir (par défaut ./simpsons_lora_results),
@@ -28,7 +35,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import shutil
 import subprocess
 import sys
@@ -70,7 +76,11 @@ def parse_args() -> argparse.Namespace:
         default="madebyollin/sdxl-vae-fp16-fix",
         help="Fix communautaire du VAE SDXL (NaN en fp16). Vide pour utiliser le VAE du modèle de base.",
     )
-    p.add_argument("--dataset-slug", default="kostastokis/simpsons-faces", help="Dataset Kaggle (kagglehub)")
+    p.add_argument(
+        "--dataset-id",
+        default="Norod78/simpsons-blip-captions",
+        help="Dataset Hugging Face (chargé via `datasets`), avec colonnes 'image' + 'text'.",
+    )
     p.add_argument("--train-data-dir", default=str(CURRENT_DIR / "train_data"))
     p.add_argument("--output-dir", default=str(REPO_ROOT / "simpsons_lora_results"),
                     help="Par défaut : simpsons_lora_results/ à la racine du dépôt, lu par l'API de service.")
@@ -100,9 +110,20 @@ def parse_args() -> argparse.Namespace:
         help="Chemin d'un checkpoint (ou 'latest') pour reprendre un entraînement interrompu.",
     )
 
+    p.add_argument(
+        "--upscale-model",
+        default="stabilityai/stable-diffusion-xl-base-1.0",
+        help="Modèle utilisé pour la passe d'upscale (par défaut : le même que --base-model, déjà téléchargé).",
+    )
+    p.add_argument(
+        "--skip-upscale",
+        action="store_true",
+        help="Ne pas upscaler le dataset (ex: déjà fait lors d'un run précédent avec --skip-dataset-prep).",
+    )
+
     p.add_argument("--install-deps", action="store_true", help="Installe les dépendances pip avant de lancer.")
     p.add_argument("--skip-dataset-prep", action="store_true", help="Réutilise --train-data-dir tel quel.")
-    p.add_argument("--force-redownload", action="store_true", help="Force le re-téléchargement du dataset Kaggle.")
+    p.add_argument("--force-redownload", action="store_true", help="Force le re-téléchargement du dataset.")
 
     return p.parse_args()
 
@@ -111,7 +132,7 @@ def install_dependencies() -> None:
     log.info("Installation des dépendances...")
     packages = [
         "accelerate", "transformers", "diffusers", "peft", "datasets",
-        "kagglehub", "pillow", "requests", "bitsandbytes", "xformers",
+        "pillow", "requests", "bitsandbytes", "xformers",
     ]
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *packages], check=True)
     log.info("Dépendances installées.")
@@ -128,36 +149,78 @@ def ensure_training_script() -> None:
     log.info("Script d'entraînement téléchargé : %s", TRAIN_SCRIPT_PATH)
 
 
-def prepare_dataset(dataset_slug: str, train_data_dir: Path, force_redownload: bool) -> None:
-    import kagglehub
+def prepare_dataset(dataset_id: str, train_data_dir: Path, force_redownload: bool) -> None:
+    """Télécharge un dataset Hugging Face (colonnes 'image' + légende 'text' ou
+    'caption') et l'écrit au format imagefolder + metadata.jsonl attendu par le
+    script d'entraînement. Si le dataset n'a pas de légende par image, retombe
+    sur DEFAULT_PROMPTS en rotation (comportement de l'ancien dataset Kaggle)."""
+    from datasets import load_dataset
 
-    log.info("Téléchargement du dataset Kaggle '%s'...", dataset_slug)
-    try:
-        cache_path = Path(kagglehub.dataset_download(dataset_slug, force_download=force_redownload))
-    except TypeError:
-        # Anciennes versions de kagglehub sans le paramètre force_download.
-        cache_path = Path(kagglehub.dataset_download(dataset_slug))
-
-    source = cache_path / "cropped" if (cache_path / "cropped").exists() else cache_path
+    log.info("Téléchargement du dataset Hugging Face '%s'...", dataset_id)
+    download_mode = "force_redownload" if force_redownload else None
+    dataset = load_dataset(dataset_id, split="train", download_mode=download_mode)
 
     if train_data_dir.exists():
         shutil.rmtree(train_data_dir)
     train_data_dir.mkdir(parents=True)
 
-    valid_extensions = (".png", ".jpg", ".jpeg")
-    images = sorted(f for f in os.listdir(source) if f.lower().endswith(valid_extensions))
-    if not images:
-        raise RuntimeError(f"Aucune image trouvée dans le dataset téléchargé ({source})")
-    log.info("%d images trouvées.", len(images))
-
     metadata_path = train_data_dir / "metadata.jsonl"
     with metadata_path.open("w", encoding="utf-8") as f:
-        for i, img in enumerate(images):
-            shutil.copy(source / img, train_data_dir / img)
-            prompt = DEFAULT_PROMPTS[i % len(DEFAULT_PROMPTS)]
-            f.write(json.dumps({"file_name": img, "text": prompt}) + "\n")
+        for i, row in enumerate(dataset):
+            file_name = f"{i:05d}.png"
+            row["image"].convert("RGB").save(train_data_dir / file_name)
+            caption = row.get("text") or row.get("caption") or DEFAULT_PROMPTS[i % len(DEFAULT_PROMPTS)]
+            f.write(json.dumps({"file_name": file_name, "text": caption}) + "\n")
 
-    log.info("Dataset prêt dans %s", train_data_dir)
+    log.info("%d images écrites dans %s", len(dataset), train_data_dir)
+
+
+def upscale_dataset(train_data_dir: Path, target_resolution: int, upscale_model: str) -> None:
+    """Porte les images du dataset à target_resolution via une passe img2img
+    SDXL à faible denoise ('hires fix') plutôt qu'un simple resize : le
+    modèle hallucine du détail plausible, alors qu'un redimensionnement
+    bilinéaire/Lanczos n'ajoute rien que le script d'entraînement ne ferait
+    déjà tout seul en chargeant les images à --resolution.
+    """
+    import torch
+    from diffusers import StableDiffusionXLImg2ImgPipeline
+    from PIL import Image
+
+    image_files = sorted(
+        f for f in train_data_dir.iterdir() if f.suffix.lower() in (".png", ".jpg", ".jpeg")
+    )
+    if not image_files:
+        log.warning("Aucune image à upscaler dans %s.", train_data_dir)
+        return
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cpu":
+        log.warning("Pas de GPU détecté : l'upscale de %d images va être très lent sur CPU.", len(image_files))
+    dtype = torch.float16 if device == "cuda" else torch.float32
+
+    log.info("Chargement de %s pour l'upscale (%s)...", upscale_model, device)
+    pipe = StableDiffusionXLImg2ImgPipeline.from_pretrained(upscale_model, torch_dtype=dtype).to(device)
+
+    log.info("Upscale de %d images vers %dx%d...", len(image_files), target_resolution, target_resolution)
+    for i, path in enumerate(image_files, start=1):
+        low_res = Image.open(path).convert("RGB").resize(
+            (target_resolution, target_resolution), Image.Resampling.LANCZOS
+        )
+        upscaled = pipe(
+            prompt="a simpson character, yellow skin, cartoon style, high quality, sharp details",
+            image=low_res,
+            strength=0.3,
+            num_inference_steps=20,
+            guidance_scale=4.0,
+        ).images[0]
+        upscaled.save(path)
+        if i % 100 == 0 or i == len(image_files):
+            log.info("Upscale : %d/%d", i, len(image_files))
+
+    del pipe
+    if device == "cuda":
+        torch.cuda.empty_cache()
+    log.info("Upscale terminé.")
 
 
 def detect_mixed_precision(explicit: str | None) -> str:
@@ -222,11 +285,16 @@ def main() -> None:
     ensure_training_script()
 
     if not args.skip_dataset_prep:
-        prepare_dataset(args.dataset_slug, train_data_dir, args.force_redownload)
+        prepare_dataset(args.dataset_id, train_data_dir, args.force_redownload)
     else:
         if not train_data_dir.exists():
             raise SystemExit(f"--skip-dataset-prep utilisé mais {train_data_dir} n'existe pas.")
         log.info("Préparation du dataset ignorée (--skip-dataset-prep), réutilisation de %s", train_data_dir)
+
+    if not args.skip_upscale:
+        upscale_dataset(train_data_dir, args.resolution, args.upscale_model)
+    else:
+        log.info("Upscale du dataset ignoré (--skip-upscale).")
 
     exit_code = run_training(args)
 
