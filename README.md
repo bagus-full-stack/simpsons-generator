@@ -105,9 +105,11 @@ SKIP_MODEL_LOAD=1 pytest
 
 ## 🖥️ Frontend
 
-Dans `simpson-front/` :
+Le frontend vit dans son propre dépôt Git, `simpson-front/` — cloné en tant que
+dossier frère de celui-ci, pas comme sous-module (voir `.gitignore`) :
 
 ```bash
+cd ../simpson-front
 npm install
 copy .env.local.example .env.local
 npm run dev
@@ -157,14 +159,19 @@ L'interface est divisée en **4 onglets intuitifs** :
 │   └── prompts.md               # Bibliothèque de prompts d'entraînement
 │
 ├── simpsons_lora_results/       # Poids LoRA entraînés, lus par app/pipelines.py
-├── generated_simpsons/          # Stockage local des images (backend "local")
-│
-└── simpson-front/               # --- FRONTEND ---
-    ├── app/
-    │   ├── page.tsx              # Interface (4 modes, galerie, caméra, éditeur)
-    │   └── lib/api.ts            # Client API (NEXT_PUBLIC_API_URL, polling des jobs)
-    ├── package.json
-    └── tailwind.config.ts
+└── generated_simpsons/          # Stockage local des images (backend "local")
+```
+
+Le frontend (`simpson-front/`) est un **dépôt Git séparé**, cloné à côté de
+celui-ci — pas un dossier de ce dépôt :
+
+```plaintext
+simpson-front/
+├── app/
+│   ├── page.tsx              # Interface (4 modes, galerie, caméra, éditeur)
+│   └── lib/api.ts            # Client API (NEXT_PUBLIC_API_URL, polling des jobs)
+├── package.json
+└── tailwind.config.ts
 ```
 
 ---

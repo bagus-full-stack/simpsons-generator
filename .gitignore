@@ -4,6 +4,10 @@ node_modules/
 .pnp.js
 .idea
 
+# Frontend : dépôt Git séparé (voir simpson-front/README ou son propre remote),
+# volontairement pas un submodule ni un dépôt imbriqué dans celui-ci.
+simpson-front/
+
 # Environnements virtuels Python
 .venv/
 venv/
