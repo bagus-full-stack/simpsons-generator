@@ -47,10 +47,19 @@ log = logging.getLogger("train_simpsons_lora")
 
 CURRENT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CURRENT_DIR.parent
+
+# Épinglée volontairement (même version que diffusers==0.31.0 dans
+# requirements.txt) : le script d'entraînement ci-dessous est téléchargé
+# depuis le tag Git correspondant, pas depuis `main`, qui pointe vers une
+# diffusers de développement (ex: 0.41.0.dev0) très en avance sur toute
+# release PyPI et fait échouer check_min_version() au lancement — après
+# que le pré-traitement du dataset (upscale hires-fix, ~2h sur Kaggle) a
+# déjà tourné pour rien.
+DIFFUSERS_VERSION = "0.31.0"
 # Script SDXL dédié (pas train_text_to_image_lora.py, qui est pour SD1.5) :
 # gère le double text encoder et les embeddings "pooled" propres à SDXL.
 TRAIN_SCRIPT_URL = (
-    "https://raw.githubusercontent.com/huggingface/diffusers/main/"
+    f"https://raw.githubusercontent.com/huggingface/diffusers/v{DIFFUSERS_VERSION}/"
     "examples/text_to_image/train_text_to_image_lora_sdxl.py"
 )
 TRAIN_SCRIPT_PATH = CURRENT_DIR / "train_text_to_image_lora_sdxl.py"
@@ -131,7 +140,7 @@ def parse_args() -> argparse.Namespace:
 def install_dependencies() -> None:
     log.info("Installation des dépendances...")
     packages = [
-        "accelerate", "transformers", "diffusers", "peft", "datasets",
+        "accelerate", "transformers", f"diffusers=={DIFFUSERS_VERSION}", "peft", "datasets",
         "pillow", "requests", "bitsandbytes", "xformers",
     ]
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *packages], check=True)
@@ -140,9 +149,17 @@ def install_dependencies() -> None:
 
 def ensure_training_script() -> None:
     if TRAIN_SCRIPT_PATH.exists():
-        log.info("Script d'entraînement déjà présent : %s", TRAIN_SCRIPT_PATH)
-        return
-    log.info("Téléchargement du script officiel diffusers (train_text_to_image_lora.py)...")
+        # Un script mis en cache par un run précédent (autre version de
+        # DIFFUSERS_VERSION) planterait sur check_min_version() malgré le
+        # pin ci-dessus : on le détecte et on retélécharge plutôt que de
+        # skipper silencieusement.
+        cached = TRAIN_SCRIPT_PATH.read_text(encoding="utf-8", errors="ignore")
+        if f'check_min_version("{DIFFUSERS_VERSION}")' in cached:
+            log.info("Script d'entraînement déjà présent (version à jour) : %s", TRAIN_SCRIPT_PATH)
+            return
+        log.info("Script d'entraînement en cache obsolète (autre version de diffusers), retéléchargement...")
+
+    log.info("Téléchargement du script officiel diffusers (train_text_to_image_lora_sdxl.py, v%s)...", DIFFUSERS_VERSION)
     response = requests.get(TRAIN_SCRIPT_URL, timeout=30)
     response.raise_for_status()
     TRAIN_SCRIPT_PATH.write_bytes(response.content)
