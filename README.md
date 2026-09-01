@@ -154,7 +154,8 @@ L'interface est divisée en **4 onglets intuitifs** :
 ├── docker-compose.yml           # Stack locale (API, + Redis/Postgres/worker en option)
 │
 ├── training/                    # Fine-tuning du LoRA (hors service de prod)
-│   ├── train_simpsons_lora.py   # Script d'entraînement (remplace les notebooks)
+│   ├── train_simpsons_lora.py         # Script d'entraînement (remplace les notebooks)
+│   ├── extract_frames_from_videos.py  # Dataset HD alternatif : frames extraites de tes propres épisodes (ffmpeg)
 │   ├── simpsonGenerator*.ipynb  # Notebooks d'origine, conservés pour référence
 │   └── prompts.md               # Bibliothèque de prompts d'entraînement
 │
