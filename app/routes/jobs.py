@@ -6,8 +6,6 @@ Le client va ensuite consulter GET /jobs/{id} jusqu'à ce que le statut soit
 "done"/"failed"/"rejected" — voir simpson-front/app/lib/api.ts::pollJob.
 """
 
-from __future__ import annotations
-
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
