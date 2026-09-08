@@ -140,7 +140,7 @@ def parse_args() -> argparse.Namespace:
 def install_dependencies() -> None:
     log.info("Installation des dépendances...")
     packages = [
-        "accelerate", "transformers", f"diffusers=={DIFFUSERS_VERSION}", "peft", "datasets",
+        "accelerate", "transformers==4.47.1", f"diffusers=={DIFFUSERS_VERSION}", "peft", "datasets",
         "pillow", "requests", "bitsandbytes", "xformers",
     ]
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *packages], check=True)
