@@ -84,8 +84,20 @@ uvicorn app.main:app --reload
 ```
 
 Par défaut (`QUEUE_BACKEND=inline` dans `.env.example`), tout tourne dans un seul
-process comme avant, sans dépendance externe. Pour activer la file d'attente
-asynchrone (Redis + worker séparé, scalable indépendamment de l'API) :
+process comme avant, sans dépendance externe.
+
+### 2. Backend (Docker, alternative à l'étape 1)
+
+Si vous préférez ne pas installer Python/CUDA en local (nécessite le NVIDIA
+Container Toolkit pour exposer le GPU au conteneur) :
+
+```bash
+# API seule, file inline (même comportement que uvicorn ci-dessus)
+docker compose up --build
+```
+
+Pour activer la file d'attente asynchrone (Redis + Postgres + worker séparé,
+scalable indépendamment de l'API) :
 
 ```bash
 docker compose --profile async up --build
