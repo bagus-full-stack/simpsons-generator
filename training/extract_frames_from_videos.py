@@ -157,7 +157,12 @@ class GlobalDeduper:
         self._buckets: dict[int, list] = {}
 
     def _bucket_key(self, hash_value) -> int:
-        return int(str(hash_value), 16) >> (self.hash_size * self.hash_size // 2 - 12)
+        # Clampé à 0 : pour un --hash-size assez petit (<5, hash sur moins de
+        # 24 bits), la formule d'origine devenait négative et `>>` lève un
+        # ValueError. On dégrade alors juste vers "toutes les frames dans le
+        # même compartiment" plutôt que de planter.
+        shift = max(self.hash_size * self.hash_size // 2 - 12, 0)
+        return int(str(hash_value), 16) >> shift
 
     def is_duplicate_then_add(self, hash_value) -> bool:
         key = self._bucket_key(hash_value)

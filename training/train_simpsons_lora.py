@@ -144,6 +144,13 @@ def install_dependencies() -> None:
         "pillow", "requests", "bitsandbytes", "xformers",
     ]
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *packages], check=True)
+    # `peft` récent refuse d'ajouter l'adaptateur LoRA si `torchao` est présent
+    # en version trop ancienne (ex: 0.10.0 préinstallé sur les images Kaggle),
+    # même quand on ne s'en sert pas du tout ici (pas de quantization) : voir
+    # peft.tuners.lora.torchao.dispatch_torchao -> is_torchao_available(), qui
+    # lève une ImportError bloquante au lieu de simplement désactiver ce
+    # dispatch. On le désinstalle pour repasser dans le cas "non disponible".
+    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "-q", "torchao"], check=False)
     log.info("Dépendances installées.")
 
 
@@ -159,7 +166,10 @@ def ensure_training_script() -> None:
             return
         log.info("Script d'entraînement en cache obsolète (autre version de diffusers), retéléchargement...")
 
-    log.info("Téléchargement du script officiel diffusers (train_text_to_image_lora_sdxl.py, v%s)...", DIFFUSERS_VERSION)
+    log.info(
+        "Téléchargement du script officiel diffusers (train_text_to_image_lora_sdxl.py, v%s)...",
+        DIFFUSERS_VERSION,
+    )
     response = requests.get(TRAIN_SCRIPT_URL, timeout=30)
     response.raise_for_status()
     TRAIN_SCRIPT_PATH.write_bytes(response.content)
