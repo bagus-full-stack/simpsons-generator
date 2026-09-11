@@ -140,8 +140,15 @@ def parse_args() -> argparse.Namespace:
 def install_dependencies() -> None:
     log.info("Installation des dépendances...")
     packages = [
-        "accelerate", "transformers==4.47.1", f"diffusers=={DIFFUSERS_VERSION}", "peft", "datasets",
-        "pillow", "requests", "bitsandbytes", "xformers",
+        "accelerate", "transformers==4.47.1", f"diffusers=={DIFFUSERS_VERSION}",
+        # Épinglé comme dans requirements.txt : un peft plus récent tente
+        # d'importer transformers.integrations.tensor_parallel (ajouté dans une
+        # version de transformers postérieure à 4.47.1) dès qu'on recharge le
+        # LoRA dans le pipeline (set_peft_model_state_dict), ce qui fait planter
+        # la validation finale avec ModuleNotFoundError une fois l'entraînement
+        # terminé.
+        "peft==0.14.0",
+        "datasets", "pillow", "requests", "bitsandbytes", "xformers",
     ]
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *packages], check=True)
     # `peft` récent refuse d'ajouter l'adaptateur LoRA si `torchao` est présent
