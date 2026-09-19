@@ -103,6 +103,21 @@ scalable indépendamment de l'API) :
 docker compose --profile async up --build
 ```
 
+**Mode normal (défaut)** : un seul conteneur `api`. La génération tourne dans
+le process de l'API elle-même (`QUEUE_BACKEND=inline`), et l'historique des
+jobs est stocké en SQLite local au conteneur (`DATABASE_URL=sqlite:///./app.db`).
+Aucune dépendance externe. Simple, mais un seul GPU/process traite les
+requêtes une par une — pas de vraie parallélisation.
+
+**Mode `--profile async`** : quatre conteneurs (`api`, `worker`, `redis`,
+`postgres`). L'API dépose le job dans une file Redis (`QUEUE_BACKEND=rq`) et
+répond immédiatement sans attendre la génération ; un conteneur `worker`
+séparé consomme la file et exécute la génération sur son propre GPU.
+L'historique des jobs passe sur Postgres partagé (`DATABASE_URL=postgresql+psycopg2://...`)
+plutôt que SQLite, car `api` et `worker` sont deux conteneurs distincts qui
+doivent voir le même état des jobs. Permet de scaler en lançant plusieurs
+`worker` en parallèle pour traiter la file plus vite, sans toucher à l'API.
+
 Voir `.env.example` pour le détail de chaque variable (modèle, stockage
 local/S3, modération, rate limit, Sentry...).
 

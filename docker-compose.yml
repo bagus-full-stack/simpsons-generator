@@ -17,6 +17,13 @@ services:
       - ./simpsons_lora_results:/srv/simpsons_lora_results:ro
       - generated_data:/srv/generated_simpsons
       - db_data:/srv/data
+    depends_on:
+      redis:
+        condition: service_started
+        required: false
+      postgres:
+        condition: service_started
+        required: false
     deploy:
       resources:
         reservations:
@@ -33,7 +40,7 @@ services:
       - ./simpsons_lora_results:/srv/simpsons_lora_results:ro
       - generated_data:/srv/generated_simpsons
       - db_data:/srv/data
-    depends_on: [redis]
+    depends_on: [redis, postgres]
     profiles: ["async"]
     deploy:
       resources:

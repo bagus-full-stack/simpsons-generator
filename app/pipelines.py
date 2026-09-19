@@ -65,6 +65,11 @@ def load_pipelines() -> None:
         pipe_kwargs["vae"] = AutoencoderKL.from_pretrained(settings.vae_model_id, torch_dtype=dtype)
 
     text_pipe = StableDiffusionXLPipeline.from_pretrained(settings.base_model_id, **pipe_kwargs).to(device)
+    # VAE decode of a full 1024x1024 SDXL latent is memory-hungry enough to OOM even
+    # when the denoising loop itself fits in VRAM. vae is shared across all 4 pipelines
+    # (see text_pipe.components below), so enabling tiling once here covers all of them.
+    text_pipe.enable_vae_tiling()
+    text_pipe.enable_vae_slicing()
 
     LOADED_ADAPTERS.clear()
     lora_weights = settings.lora_dir / "pytorch_lora_weights.safetensors"
