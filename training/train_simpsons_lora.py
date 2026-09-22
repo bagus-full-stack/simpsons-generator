@@ -15,12 +15,13 @@ Usage :
     python train_simpsons_lora.py --skip-dataset-prep  # dataset déjà préparé dans --train-data-dir
     python train_simpsons_lora.py --resume-from-checkpoint latest
 
-Dataset : Norod78/simpsons-blip-captions (Hugging Face, 755 images captionnées
-par BLIP, scènes complètes — pas que des visages). Les images sources font
-512x512 : une passe "hires fix" (img2img SDXL à faible denoise, voir
-upscale_dataset()) les porte à --resolution avant l'entraînement, pour
-apporter un vrai détail plausible plutôt que le simple redimensionnement
-bilinéaire que ferait de toute façon le script d'entraînement sinon.
+Dataset : kostastokis/simpsons-faces (Kaggle, visages Simpsons déjà recadrés,
+sans légende par image -> DEFAULT_PROMPTS en rotation). --skip-upscale est
+actif par défaut pour ce dataset : la passe "hires fix" (img2img SDXL, voir
+upscale_dataset()) repeint les images vers l'esthétique générique de SDXL et
+a dilué le style Simpsons lors d'un run précédent (sur Norod78/simpsons-blip-
+captions, un dataset de scènes complètes avec légendes BLIP génériques,
+utilisé un temps à la place de celui-ci).
 
 Prérequis (si --install-deps n'est pas utilisé) :
     pip install accelerate transformers diffusers peft datasets pillow requests torch
@@ -87,8 +88,8 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--dataset-id",
-        default="Norod78/simpsons-blip-captions",
-        help="Dataset Hugging Face (chargé via `datasets`), avec colonnes 'image' + 'text'.",
+        default="kostastokis/simpsons-faces",
+        help="Dataset Kaggle (via kagglehub) ou Hugging Face (via `datasets`, colonnes 'image' + 'text').",
     )
     p.add_argument("--train-data-dir", default=str(CURRENT_DIR / "train_data"))
     p.add_argument("--output-dir", default=str(REPO_ROOT / "simpsons_lora_results"),
@@ -127,8 +128,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--skip-upscale",
         action="store_true",
-        help="Ne pas upscaler le dataset (ex: déjà fait lors d'un run précédent avec --skip-dataset-prep).",
+        default=True,
+        help="Ne pas upscaler le dataset. Actif par défaut : la passe SDXL img2img repeint les images vers "
+        "l'esthétique SDXL et dilue le style Simpsons (voir docstring d'upscale_dataset). "
+        "Utiliser --no-skip-upscale pour la réactiver si le dataset source est en trop basse résolution.",
     )
+    p.add_argument("--no-skip-upscale", dest="skip_upscale", action="store_false")
 
     p.add_argument("--install-deps", action="store_true", help="Installe les dépendances pip avant de lancer.")
     p.add_argument("--skip-dataset-prep", action="store_true", help="Réutilise --train-data-dir tel quel.")
@@ -148,7 +153,7 @@ def install_dependencies() -> None:
         # la validation finale avec ModuleNotFoundError une fois l'entraînement
         # terminé.
         "peft==0.14.0",
-        "datasets", "pillow", "requests", "bitsandbytes", "xformers",
+        "datasets", "kagglehub", "pillow", "requests", "bitsandbytes", "xformers",
     ]
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", *packages], check=True)
     # `peft` récent refuse d'ajouter l'adaptateur LoRA si `torchao` est présent
@@ -183,20 +188,35 @@ def ensure_training_script() -> None:
     log.info("Script d'entraînement téléchargé : %s", TRAIN_SCRIPT_PATH)
 
 
-def prepare_dataset(dataset_id: str, train_data_dir: Path, force_redownload: bool) -> None:
-    """Télécharge un dataset Hugging Face (colonnes 'image' + légende 'text' ou
-    'caption') et l'écrit au format imagefolder + metadata.jsonl attendu par le
-    script d'entraînement. Si le dataset n'a pas de légende par image, retombe
-    sur DEFAULT_PROMPTS en rotation (comportement de l'ancien dataset Kaggle)."""
+def prepare_dataset_kaggle(dataset_id: str, train_data_dir: Path, force_redownload: bool) -> None:
+    """Dataset Kaggle (ex: kostastokis/simpsons-faces) : visages Simpsons déjà
+    recadrés, sans légende par image -> DEFAULT_PROMPTS en rotation, comme dans
+    l'ancien notebook."""
+    import kagglehub
+
+    log.info("Téléchargement du dataset Kaggle '%s'...", dataset_id)
+    source = Path(kagglehub.dataset_download(dataset_id, force_download=force_redownload))
+    if (source / "cropped").exists():
+        source = source / "cropped"
+    images = sorted(f for f in source.iterdir() if f.suffix.lower() in (".png", ".jpg", ".jpeg"))
+
+    metadata_path = train_data_dir / "metadata.jsonl"
+    with metadata_path.open("w", encoding="utf-8") as f:
+        for i, img in enumerate(images):
+            shutil.copy(img, train_data_dir / img.name)
+            caption = DEFAULT_PROMPTS[i % len(DEFAULT_PROMPTS)]
+            f.write(json.dumps({"file_name": img.name, "text": caption}) + "\n")
+
+    log.info("%d images écrites dans %s", len(images), train_data_dir)
+
+
+def prepare_dataset_hf(dataset_id: str, train_data_dir: Path, force_redownload: bool) -> None:
+    """Dataset Hugging Face (colonnes 'image' + légende 'text' ou 'caption')."""
     from datasets import load_dataset
 
     log.info("Téléchargement du dataset Hugging Face '%s'...", dataset_id)
     download_mode = "force_redownload" if force_redownload else None
     dataset = load_dataset(dataset_id, split="train", download_mode=download_mode)
-
-    if train_data_dir.exists():
-        shutil.rmtree(train_data_dir)
-    train_data_dir.mkdir(parents=True)
 
     metadata_path = train_data_dir / "metadata.jsonl"
     with metadata_path.open("w", encoding="utf-8") as f:
@@ -207,6 +227,18 @@ def prepare_dataset(dataset_id: str, train_data_dir: Path, force_redownload: boo
             f.write(json.dumps({"file_name": file_name, "text": caption}) + "\n")
 
     log.info("%d images écrites dans %s", len(dataset), train_data_dir)
+
+
+def prepare_dataset(dataset_id: str, train_data_dir: Path, force_redownload: bool) -> None:
+    if train_data_dir.exists():
+        shutil.rmtree(train_data_dir)
+    train_data_dir.mkdir(parents=True)
+
+    try:
+        prepare_dataset_kaggle(dataset_id, train_data_dir, force_redownload)
+    except Exception as e:
+        log.info("Pas un dataset Kaggle valide (%s), tentative via Hugging Face...", e)
+        prepare_dataset_hf(dataset_id, train_data_dir, force_redownload)
 
 
 def upscale_dataset(train_data_dir: Path, target_resolution: int, upscale_model: str) -> None:
