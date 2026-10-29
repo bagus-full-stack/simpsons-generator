@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     # SD1.5 de base, identique à simpsonGenerator_FIXED.ipynb (celui qui a entraîné le LoRA).
     # Temps courts en mode turbo grâce à lcm_lora_id (voir pipelines.py).
     base_model_id: str = "stable-diffusion-v1-5/stable-diffusion-v1-5"
-    # Aucun VAE séparé : le notebook utilise celui de SD1.5.
-    vae_model_id: str | None = None
+    # VAE affiné : couleurs et détails un peu meilleurs que celui livré avec SD1.5.
+    vae_model_id: str | None = "stabilityai/sd-vae-ft-mse"
     lcm_lora_id: str = "latent-consistency/lcm-lora-sdv1-5"
     controlnet_model_id: str = "lllyasviel/control_v11p_sd15_canny"
     image_resolution: int = 512
@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     lora_file: str = "sd15_lora.safetensors"
     # Force du LoRA Simpsons (1.0 du notebook : force maximale).
     lora_scale: float = 1.0
+    # "Hires fix" (mode texte, hors turbo) : upscale puis 2e passe img2img légère.
+    hires_fix: bool = True
+    hires_scale: float = 1.5
+    hires_strength: float = 0.4
     device: str = "auto"  # "auto" | "cuda" | "cpu"
 
     # --- Base de données (historique des jobs) ---

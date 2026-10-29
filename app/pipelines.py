@@ -107,8 +107,10 @@ def load_pipelines() -> None:
     LOADED_ADAPTERS.append("lcm")
     text_pipe.set_adapters(LOADED_ADAPTERS, adapter_weights=[0.0 for _ in LOADED_ADAPTERS])
 
-    # DPMSolverMultistep comme simpsonGenerator_FIXED.ipynb.
-    default_scheduler = DPMSolverMultistepScheduler.from_config(text_pipe.scheduler.config)
+    # DPMSolverMultistep (comme le notebook) + sigmas Karras : détails plus nets à steps égaux.
+    default_scheduler = DPMSolverMultistepScheduler.from_config(
+        text_pipe.scheduler.config, use_karras_sigmas=True
+    )
     lcm_scheduler = LCMScheduler.from_config(text_pipe.scheduler.config)
 
     def configure_pipe(pipe):

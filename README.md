@@ -34,7 +34,7 @@ Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diff
 * **Modèles :**
     * Stable Diffusion 1.5 (`stable-diffusion-v1-5/stable-diffusion-v1-5`, 512x512, comme `simpsonGenerator_FIXED.ipynb`).
     * LoRA personnalisé (Style Simpsons, entraîné avec `simpsonGenerator_FIXED.ipynb` sur base SD1.5, appliqué à 1.0).
-    * Mode texte : même prompt, negative prompt, scheduler (`DPMSolverMultistep`), 30 steps, guidance 7.5 que le notebook (prompt `{nom} as a simpson character, yellow skin, cartoon style, …`).
+    * Mode texte : prompt, negative prompt, 30 steps et guidance 7.5 du notebook `simpsonGenerator_FIXED.ipynb`, avec trois améliorations de qualité : scheduler `DPMSolverMultistep` + sigmas Karras, VAE `stabilityai/sd-vae-ft-mse`, et « hires fix » (upscale x1.5 puis img2img à 0.4, réglable via `HIRES_FIX`, `HIRES_SCALE`, `HIRES_STRENGTH` ; désactivé en turbo).
     * LCM-LoRA SD1.5 (Accélération Latent Consistency).
     * ControlNet Canny SD1.5 (Détection de contours).
 * **Traitement d'image :** OpenCV, PIL, NumPy.

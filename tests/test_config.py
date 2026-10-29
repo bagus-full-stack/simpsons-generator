@@ -27,4 +27,4 @@ def test_defaults_target_sd15():
     assert settings.image_resolution == 512
     assert settings.lora_scale == 1.0
     assert settings.image_height == 512
-    assert not settings.vae_model_id  # "" si VAE_MODEL_ID= vide dans .env
+    assert settings.vae_model_id == "stabilityai/sd-vae-ft-mse"

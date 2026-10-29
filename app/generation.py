@@ -53,6 +53,22 @@ def image_to_png_bytes(image: Image.Image) -> bytes:
     return buf.getvalue()
 
 
+def _hires_fix(image: Image.Image, prompt: str, steps: int, guidance: float) -> Image.Image:
+    """Upscale puis img2img léger : affine les détails sans recomposer l'image."""
+    settings = get_settings()
+    size = tuple(int(d * settings.hires_scale) // 8 * 8 for d in image.size)
+    img_pipe = get_pipeline("img2img")
+    img_pipe.scheduler = img_pipe.scheduler_default
+    return img_pipe(
+        prompt=prompt,
+        negative_prompt=NEGATIVE_PROMPT,
+        image=image.resize(size, Image.Resampling.LANCZOS),
+        strength=settings.hires_strength,
+        num_inference_steps=steps,
+        guidance_scale=guidance,
+    ).images[0]
+
+
 def generate_image(
     mode: str,
     prompt: str,
@@ -109,7 +125,10 @@ def generate_image(
             settings = get_settings()
             args.update(height=settings.image_height, width=settings.image_resolution)
 
-        return pipe(**args).images[0]
+        image = pipe(**args).images[0]
+        if mode == "text" and not turbo and get_settings().hires_fix:
+            image = _hires_fix(image, full_prompt, actual_steps, actual_guidance)
+        return image
     finally:
         # Toujours revenir au scheduler par défaut, même en cas d'erreur en plein
         # milieu d'une génération turbo (comportement repris de l'ancienne API).
