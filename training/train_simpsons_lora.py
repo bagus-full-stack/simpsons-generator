@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Entraînement LoRA Stable Diffusion pour le style Simpsons.
+Entraînement LoRA Stable Diffusion (SD1.5 par défaut, SDXL avec --model-family sdxl) pour le style Simpsons.
 
 Remplace simpsonGenerator_FIXED.ipynb : mêmes étapes (installation optionnelle des
 dépendances, préparation du dataset Kaggle, lancement de l'entraînement via le
@@ -14,6 +14,12 @@ Usage :
     python train_simpsons_lora.py --max-train-steps 1500 --resolution 768
     python train_simpsons_lora.py --skip-dataset-prep  # dataset déjà préparé dans --train-data-dir
     python train_simpsons_lora.py --resume-from-checkpoint latest
+
+    python train_simpsons_lora.py --model-family sdxl   # SDXL : 1024 px, batch 1, nettement plus lent
+
+Kaggle (2x T4, 15 Go chacun) : les 2 GPU sont détectés et utilisés automatiquement
+(accelerate --multi_gpu). T4 = pas de bf16, donc fp16 (défaut). Voir le README.
+    python train_simpsons_lora.py --install-deps --output-dir /kaggle/working/simpsons_lora_results
 
 Dataset : kostastokis/simpsons-faces (Kaggle, visages Simpsons déjà recadrés,
 sans légende par image -> DEFAULT_PROMPTS en rotation). --skip-upscale est
@@ -58,13 +64,23 @@ REPO_ROOT = CURRENT_DIR.parent
 # que le pré-traitement du dataset (upscale hires-fix, ~2h sur Kaggle) a
 # déjà tourné pour rien.
 DIFFUSERS_VERSION = "0.31.0"
-# Script SDXL dédié (pas train_text_to_image_lora.py, qui est pour SD1.5) :
-# gère le double text encoder et les embeddings "pooled" propres à SDXL.
-TRAIN_SCRIPT_URL = (
-    f"https://raw.githubusercontent.com/huggingface/diffusers/v{DIFFUSERS_VERSION}/"
-    "examples/text_to_image/train_text_to_image_lora_sdxl.py"
-)
-TRAIN_SCRIPT_PATH = CURRENT_DIR / "train_text_to_image_lora_sdxl.py"
+# Un script officiel par famille : le script SDXL gère le double text encoder et
+# les embeddings "pooled" propres à SDXL, pas le script SD1.5.
+TRAIN_SCRIPT_NAMES = {
+    "sd15": "train_text_to_image_lora.py",
+    "sdxl": "train_text_to_image_lora_sdxl.py",
+}
+# Valeurs par défaut selon la famille : (modèle de base, résolution, batch par GPU, VAE).
+FAMILY_DEFAULTS = {
+    "sd15": ("stable-diffusion-v1-5/stable-diffusion-v1-5", 512, 4, ""),
+    "sdxl": ("stabilityai/stable-diffusion-xl-base-1.0", 1024, 1, "madebyollin/sdxl-vae-fp16-fix"),
+}
+
+
+def train_script(family: str) -> tuple[str, Path]:
+    name = TRAIN_SCRIPT_NAMES[family]
+    url = f"https://raw.githubusercontent.com/huggingface/diffusers/v{DIFFUSERS_VERSION}/examples/text_to_image/{name}"
+    return url, CURRENT_DIR / name
 
 # Prompts utilisés en rotation pour légender les images du dataset : les varier
 # (plutôt qu'une légende unique) aide le LoRA à généraliser le style plutôt que
@@ -81,11 +97,17 @@ DEFAULT_PROMPTS = [
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Fine-tuning LoRA Stable Diffusion — style Simpsons")
 
-    p.add_argument("--base-model", default="stabilityai/stable-diffusion-xl-base-1.0")
+    p.add_argument(
+        "--model-family",
+        choices=["sd15", "sdxl"],
+        default="sd15",
+        help="sd15 (défaut, démo locale sur GPU 6 Go) ou sdxl. Détermine script, base, résolution et batch par défaut.",
+    )
+    p.add_argument("--base-model", default=None, help="Défaut : selon --model-family.")
     p.add_argument(
         "--pretrained-vae-model",
-        default="madebyollin/sdxl-vae-fp16-fix",
-        help="Fix communautaire du VAE SDXL (NaN en fp16). Vide pour utiliser le VAE du modèle de base.",
+        default=None,
+        help="SDXL : fix communautaire du VAE (NaN en fp16) par défaut. Vide pour utiliser le VAE du modèle de base.",
     )
     p.add_argument(
         "--dataset-id",
@@ -96,13 +118,24 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", default=str(REPO_ROOT / "simpsons_lora_results"),
                     help="Par défaut : simpsons_lora_results/ à la racine du dépôt, lu par l'API de service.")
 
-    p.add_argument("--resolution", type=int, default=1024)
+    p.add_argument("--resolution", type=int, default=None, help="Défaut : 512 (sd15) ou 1024 (sdxl).")
     # SDXL est nettement plus lourd que SD1.5 : batch_size=1 + gradient checkpointing
     # + adam 8-bit (voir run_training) pour tenir sur un GPU Kaggle (T4/P100, 16 Go).
-    p.add_argument("--train-batch-size", type=int, default=1)
-    p.add_argument("--gradient-accumulation-steps", type=int, default=4)
+    p.add_argument("--train-batch-size", type=int, default=None, help="Par GPU. Défaut : 4 (sd15) ou 1 (sdxl).")
+    p.add_argument(
+        "--gradient-accumulation-steps",
+        type=int,
+        default=None,
+        help="Défaut : calculé pour un batch effectif de 4 (nb de GPU x batch x accumulation).",
+    )
     p.add_argument("--max-train-steps", type=int, default=3000)
-    p.add_argument("--learning-rate", type=float, default=5e-5)
+    p.add_argument("--learning-rate", type=float, default=1e-4)
+    # Rang du LoRA : 4 (défaut diffusers) donnait un style Simpsons très faible (3 Mo) ;
+    # 32 capture bien mieux le style pour ~25 Mo.
+    p.add_argument("--rank", type=int, default=32)
+    # Pondération Min-SNR : converge plus vite et plus stable (recommandé par diffusers).
+    p.add_argument("--snr-gamma", type=float, default=5.0)
+    p.add_argument("--num-processes", type=int, default=None, help="Nombre de GPU (défaut : tous ceux détectés).")
     p.add_argument("--lr-scheduler", default="cosine_with_restarts")
     p.add_argument("--lr-warmup-steps", type=int, default=200)
     p.add_argument("--checkpointing-steps", type=int, default=500)
@@ -123,8 +156,8 @@ def parse_args() -> argparse.Namespace:
 
     p.add_argument(
         "--upscale-model",
-        default="stabilityai/stable-diffusion-xl-base-1.0",
-        help="Modèle utilisé pour la passe d'upscale (par défaut : le même que --base-model, déjà téléchargé).",
+        default=None,
+        help="Modèle utilisé pour la passe d'upscale SDXL (par défaut : le même que --base-model).",
     )
     p.add_argument(
         "--skip-upscale",
@@ -140,7 +173,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--skip-dataset-prep", action="store_true", help="Réutilise --train-data-dir tel quel.")
     p.add_argument("--force-redownload", action="store_true", help="Force le re-téléchargement du dataset.")
 
-    return p.parse_args()
+    args = p.parse_args()
+    base, resolution, batch, vae = FAMILY_DEFAULTS[args.model_family]
+    args.base_model = args.base_model or base
+    args.resolution = args.resolution or resolution
+    args.train_batch_size = args.train_batch_size or batch
+    if args.pretrained_vae_model is None:
+        args.pretrained_vae_model = vae
+    args.upscale_model = args.upscale_model or args.base_model
+    return args
 
 
 def install_dependencies() -> None:
@@ -167,26 +208,28 @@ def install_dependencies() -> None:
     log.info("Dépendances installées.")
 
 
-def ensure_training_script() -> None:
-    if TRAIN_SCRIPT_PATH.exists():
+def ensure_training_script(family: str) -> Path:
+    url, path = train_script(family)
+    if path.exists():
         # Un script mis en cache par un run précédent (autre version de
         # DIFFUSERS_VERSION) planterait sur check_min_version() malgré le
         # pin ci-dessus : on le détecte et on retélécharge plutôt que de
         # skipper silencieusement.
-        cached = TRAIN_SCRIPT_PATH.read_text(encoding="utf-8", errors="ignore")
+        cached = path.read_text(encoding="utf-8", errors="ignore")
         if f'check_min_version("{DIFFUSERS_VERSION}")' in cached:
-            log.info("Script d'entraînement déjà présent (version à jour) : %s", TRAIN_SCRIPT_PATH)
-            return
+            log.info("Script d'entraînement déjà présent (version à jour) : %s", path)
+            return path
         log.info("Script d'entraînement en cache obsolète (autre version de diffusers), retéléchargement...")
 
     log.info(
         "Téléchargement du script officiel diffusers (train_text_to_image_lora_sdxl.py, v%s)...",
         DIFFUSERS_VERSION,
     )
-    response = requests.get(TRAIN_SCRIPT_URL, timeout=30)
+    response = requests.get(url, timeout=30)
     response.raise_for_status()
-    TRAIN_SCRIPT_PATH.write_bytes(response.content)
-    log.info("Script d'entraînement téléchargé : %s", TRAIN_SCRIPT_PATH)
+    path.write_bytes(response.content)
+    log.info("Script d'entraînement téléchargé : %s", path)
+    return path
 
 
 def prepare_dataset_kaggle(dataset_id: str, train_data_dir: Path, force_redownload: bool) -> None:
@@ -300,12 +343,30 @@ def detect_mixed_precision(explicit: str | None) -> str:
         return "no"
 
 
-def run_training(args: argparse.Namespace) -> int:
-    mixed_precision = detect_mixed_precision(args.mixed_precision)
-    log.info("Lancement de l'entraînement (mixed_precision=%s)...", mixed_precision)
+def detect_num_processes(explicit: int | None) -> int:
+    if explicit:
+        return explicit
+    try:
+        import torch
+        return max(1, torch.cuda.device_count())
+    except ImportError:
+        return 1
 
+
+def run_training(args: argparse.Namespace, script_path: Path) -> int:
+    mixed_precision = detect_mixed_precision(args.mixed_precision)
+    num_processes = detect_num_processes(args.num_processes)
+    accumulation = args.gradient_accumulation_steps or max(1, 4 // (num_processes * args.train_batch_size))
+    log.info(
+        "Lancement de l'entraînement (GPU=%d, mixed_precision=%s, batch effectif=%d)...",
+        num_processes, mixed_precision, num_processes * args.train_batch_size * accumulation,
+    )
+
+    launcher = ["accelerate", "launch"]
+    if num_processes > 1:
+        launcher += ["--multi_gpu", f"--num_processes={num_processes}", f"--mixed_precision={mixed_precision}"]
     cmd = [
-        "accelerate", "launch", str(TRAIN_SCRIPT_PATH),
+        *launcher, str(script_path),
         f"--pretrained_model_name_or_path={args.base_model}",
         f"--train_data_dir={args.train_data_dir}",
         "--dataset_name=imagefolder",
@@ -314,10 +375,9 @@ def run_training(args: argparse.Namespace) -> int:
         "--center_crop",
         "--random_flip",
         f"--train_batch_size={args.train_batch_size}",
-        f"--gradient_accumulation_steps={args.gradient_accumulation_steps}",
-        # Nécessaires pour faire tenir un entraînement SDXL sur un GPU 16 Go
-        # (Kaggle T4/P100) — inutiles mais inoffensifs sur un GPU plus large.
-        "--gradient_checkpointing",
+        f"--gradient_accumulation_steps={accumulation}",
+        f"--rank={args.rank}",
+        f"--snr_gamma={args.snr_gamma}",
         "--use_8bit_adam",
         f"--max_train_steps={args.max_train_steps}",
         f"--learning_rate={args.learning_rate}",
@@ -332,7 +392,10 @@ def run_training(args: argparse.Namespace) -> int:
         "--num_validation_images=1",
         f"--seed={args.seed}",
     ]
-    if args.pretrained_vae_model:
+    if args.model_family == "sdxl":
+        # Nécessaire pour faire tenir SDXL sur un GPU 16 Go (Kaggle T4/P100).
+        cmd.append("--gradient_checkpointing")
+    if args.pretrained_vae_model and args.model_family == "sdxl":
         cmd.append(f"--pretrained_vae_model_name_or_path={args.pretrained_vae_model}")
     if args.resume_from_checkpoint:
         cmd.append(f"--resume_from_checkpoint={args.resume_from_checkpoint}")
@@ -357,7 +420,7 @@ def main() -> None:
     if args.install_deps:
         install_dependencies()
 
-    ensure_training_script()
+    script_path = ensure_training_script(args.model_family)
 
     if not args.skip_dataset_prep:
         prepare_dataset(args.dataset_id, train_data_dir, args.force_redownload)
@@ -371,7 +434,7 @@ def main() -> None:
     else:
         log.info("Upscale du dataset ignoré (--skip-upscale).")
 
-    exit_code = run_training(args)
+    exit_code = run_training(args, script_path)
 
     if exit_code == 0:
         log.info("Entraînement terminé. Poids LoRA dans : %s", output_dir)

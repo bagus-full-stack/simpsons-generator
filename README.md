@@ -33,7 +33,7 @@ Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diff
 * **Core IA :** PyTorch (CUDA), Diffusers (Hugging Face).
 * **Modèles :**
     * Stable Diffusion 1.5 (`stable-diffusion-v1-5/stable-diffusion-v1-5`, 512x512, comme `simpsonGenerator_FIXED.ipynb`).
-    * LoRA personnalisé (Style Simpsons, entraîné avec `simpsonGenerator_FIXED.ipynb` sur base SD1.5, appliqué à 1.0).
+    * LoRA personnalisé (Style Simpsons, entraîné avec `simpsonGenerator_FIXED.ipynb` sur base SD1.5, appliqué à 0.8).
     * Mode texte : prompt, negative prompt, 30 steps et guidance 7.5 du notebook `simpsonGenerator_FIXED.ipynb`, avec trois améliorations de qualité : scheduler `DPMSolverMultistep` + sigmas Karras, VAE `stabilityai/sd-vae-ft-mse`, et « hires fix » (upscale x1.5 puis img2img à 0.4, réglable via `HIRES_FIX`, `HIRES_SCALE`, `HIRES_STRENGTH` ; désactivé en turbo).
     * LCM-LoRA SD1.5 (Accélération Latent Consistency).
     * ControlNet Canny SD1.5 (Détection de contours).
@@ -205,6 +205,36 @@ simpson-front/
 ├── package.json
 └── tailwind.config.ts
 ```
+
+---
+
+## 🏋️ Réentraîner le LoRA sur Kaggle (2× T4)
+
+Le LoRA livré (`sd15_lora.safetensors`) est de rang 4 (3 Mo) : le style Simpsons est faible. `training/train_simpsons_lora.py`
+en entraîne un de rang 32, sur SD1.5 par défaut (la base utilisée par l'app et la démo locale).
+
+Dans un notebook Kaggle (Accelerator : **GPU T4 x2**, Internet activé) :
+
+```bash
+!git clone https://github.com/bagus-full-stack/simpsons-generator.git
+%cd simpsons-generator/training
+!python train_simpsons_lora.py --install-deps --output-dir /kaggle/working/simpsons_lora_results
+```
+
+* Les 2 GPU sont détectés et utilisés automatiquement (`accelerate --multi_gpu`). Les T4 n'ont pas de bf16 : fp16.
+* Défauts SD1.5 : 512 px, batch 4 par GPU, rang 32, lr 1e-4, Min-SNR 5.0, 3000 steps. Un seul GPU : `--num-processes 1`.
+* Reprise après coupure de session : `--resume-from-checkpoint latest` (checkpoints toutes les 500 steps).
+* Le dataset (`kostastokis/simpsons-faces`) n'a pas de légende par image : 5 légendes génériques tournent en rotation.
+
+Utiliser le nouveau LoRA : récupérer `pytorch_lora_weights.safetensors` depuis `/kaggle/working/simpsons_lora_results/`,
+le copier dans `simpsons_lora_results/` sous un autre nom (ex. `sd15_lora_r32.safetensors`, pour ne pas écraser l'ancien)
+et mettre `LORA_FILE=sd15_lora_r32.safetensors` dans `.env`. Un LoRA plus fort peut demander un `LORA_SCALE` plus bas que 1.0.
+
+**Variante SDXL** (`--model-family sdxl` : 1024 px, batch 1, nettement plus lent). Le LoRA SD1.5 est incompatible avec SDXL,
+et le code SDXL de l'API est dans l'historique git (`git show f653fa4^:app/pipelines.py`). Il faudrait alors
+`BASE_MODEL_ID=stabilityai/stable-diffusion-xl-base-1.0`, `VAE_MODEL_ID=madebyollin/sdxl-vae-fp16-fix`,
+`LCM_LORA_ID=latent-consistency/lcm-lora-sdxl`, `CONTROLNET_MODEL_ID=diffusers/controlnet-canny-sdxl-1.0`,
+`IMAGE_RESOLUTION=1024`. Sur un GPU de 6 Go, SDXL ne tient pas en VRAM (offload CPU, générations lentes).
 
 ---
 

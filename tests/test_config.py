@@ -25,6 +25,6 @@ def test_defaults_target_sd15():
     assert settings.lcm_lora_id == "latent-consistency/lcm-lora-sdv1-5"
     assert settings.controlnet_model_id == "lllyasviel/control_v11p_sd15_canny"
     assert settings.image_resolution == 512
-    assert settings.lora_scale == 1.0
+    assert settings.lora_scale == 0.8
     assert settings.image_height == 512
     assert settings.vae_model_id == "stabilityai/sd-vae-ft-mse"

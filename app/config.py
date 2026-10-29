@@ -39,8 +39,9 @@ class Settings(BaseSettings):
     image_height: int = 512
     lora_dir: Path = BASE_DIR / "simpsons_lora_results"
     lora_file: str = "sd15_lora.safetensors"
-    # Force du LoRA Simpsons (1.0 du notebook : force maximale).
-    lora_scale: float = 1.0
+    # Force du LoRA Simpsons. 0.8 : plus net que 1.0 (yeux/visages moins déformés) sans perdre
+    # le style (0.6 le dilue). Mesuré avec scripts/sweep_lora_scale.py ; à refaire pour un nouveau LoRA.
+    lora_scale: float = 0.8
     # "Hires fix" (mode texte, hors turbo) : upscale puis 2e passe img2img légère.
     hires_fix: bool = True
     hires_scale: float = 1.5
