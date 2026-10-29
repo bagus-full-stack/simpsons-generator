@@ -9,7 +9,6 @@ __pycache__
 tests
 training
 generated_simpsons
-simpson-front
 *.db
 .env
 .env.local

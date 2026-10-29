@@ -21,8 +21,10 @@ def test_defaults_are_dev_friendly():
 
 def test_defaults_target_sd15():
     settings = Settings()
-    assert settings.base_model_id == "SG161222/Realistic_Vision_V6.0_B1_noVAE"
+    assert settings.base_model_id == "stable-diffusion-v1-5/stable-diffusion-v1-5"
     assert settings.lcm_lora_id == "latent-consistency/lcm-lora-sdv1-5"
     assert settings.controlnet_model_id == "lllyasviel/control_v11p_sd15_canny"
     assert settings.image_resolution == 512
-    assert settings.lora_scale == 0.6
+    assert settings.lora_scale == 1.0
+    assert settings.image_height == 512
+    assert not settings.vae_model_id  # "" si VAE_MODEL_ID= vide dans .env

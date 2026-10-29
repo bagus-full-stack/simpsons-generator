@@ -54,18 +54,6 @@ services:
               count: 1
               capabilities: [gpu]
 
-  front:
-    build:
-      context: ../simpson-front
-      args:
-        # Lues par le navigateur, donc inlinées au build (pas au runtime).
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-        NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY:-}
-    image: simpsons-front:latest
-    ports:
-      - "3000:3000"
-    depends_on: [api]
-
   redis:
     image: redis:7-alpine
     ports:

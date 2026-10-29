@@ -27,21 +27,20 @@ class Settings(BaseSettings):
     skip_model_load: bool = False
 
     # --- Modèle ---
-    # SD1.5 (Realistic Vision V6), identique au notebook d'entraînement/génération.
+    # SD1.5 de base, identique à simpsonGenerator_FIXED.ipynb (celui qui a entraîné le LoRA).
     # Temps courts en mode turbo grâce à lcm_lora_id (voir pipelines.py).
-    base_model_id: str = "SG161222/Realistic_Vision_V6.0_B1_noVAE"
-    # Realistic Vision "noVAE" n'embarque pas de VAE : celui-ci est obligatoire
-    # (il évite aussi les taches noires en fp16).
-    vae_model_id: str | None = "stabilityai/sd-vae-ft-mse"
+    base_model_id: str = "stable-diffusion-v1-5/stable-diffusion-v1-5"
+    # Aucun VAE séparé : le notebook utilise celui de SD1.5.
+    vae_model_id: str | None = None
     lcm_lora_id: str = "latent-consistency/lcm-lora-sdv1-5"
     controlnet_model_id: str = "lllyasviel/control_v11p_sd15_canny"
     image_resolution: int = 512
-    # Hauteur du mode texte : portrait 512x768 comme le notebook (meilleurs visages).
-    image_height: int = 768
+    # Hauteur du mode texte : 512x512 comme le notebook.
+    image_height: int = 512
     lora_dir: Path = BASE_DIR / "simpsons_lora_results"
     lora_file: str = "sd15_lora.safetensors"
-    # Force du LoRA Simpsons (0.6 du notebook : garde la texture réaliste).
-    lora_scale: float = 0.6
+    # Force du LoRA Simpsons (1.0 du notebook : force maximale).
+    lora_scale: float = 1.0
     device: str = "auto"  # "auto" | "cuda" | "cpu"
 
     # --- Base de données (historique des jobs) ---

@@ -57,6 +57,7 @@ def load_pipelines() -> None:
     from diffusers import (
         AutoencoderKL,
         ControlNetModel,
+        DPMSolverMultistepScheduler,
         LCMScheduler,
         StableDiffusionControlNetPipeline,
         StableDiffusionImg2ImgPipeline,
@@ -106,8 +107,8 @@ def load_pipelines() -> None:
     LOADED_ADAPTERS.append("lcm")
     text_pipe.set_adapters(LOADED_ADAPTERS, adapter_weights=[0.0 for _ in LOADED_ADAPTERS])
 
-    # Scheduler du modèle (PNDM pour Realistic Vision), comme le notebook.
-    default_scheduler = text_pipe.scheduler
+    # DPMSolverMultistep comme simpsonGenerator_FIXED.ipynb.
+    default_scheduler = DPMSolverMultistepScheduler.from_config(text_pipe.scheduler.config)
     lcm_scheduler = LCMScheduler.from_config(text_pipe.scheduler.config)
 
     def configure_pipe(pipe):

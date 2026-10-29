@@ -14,21 +14,15 @@ from PIL import Image, ImageOps
 from .config import get_settings
 from .pipelines import get_loaded_adapters, get_pipeline
 
-# Identiques au notebook : rendu photoréaliste, déclenché par le mot-clé "sks simpson style".
+# Identiques à simpsonGenerator_FIXED.ipynb : style cartoon Simpsons, peau jaune.
 NEGATIVE_PROMPT = (
-    "cartoon, anime, 3d render, painting, drawing, illustration, "
-    "disfigured, bad anatomy, deformed face, black spots, noise, "
-    "grainy, low resolution, blurry"
+    "realistic, photograph, photo, 3d render, ugly, deformed, "
+    "blurry, low quality, distorted, bad anatomy, extra limbs"
 )
 
 
 def build_prompt(character_or_prompt: str) -> str:
-    return (
-        f"raw photo of {character_or_prompt}, sks simpson style, "
-        "detailed skin texture, pore details, hyper realistic, "
-        "soft cinematic lighting, photorealistic, 8k uhd, "
-        "dslr, sharp focus, high quality"
-    )
+    return f"{character_or_prompt} as a simpson character, yellow skin, cartoon style, high quality, detailed"
 
 
 def process_image_bytes(data: bytes) -> Image.Image:
@@ -81,7 +75,7 @@ def generate_image(
         actual_steps, actual_guidance = 6, 1.5
     else:
         pipe.scheduler = pipe.scheduler_default
-        actual_steps, actual_guidance = steps, 5.0
+        actual_steps, actual_guidance = steps, 7.5
 
     args: dict = {
         "prompt": full_prompt,

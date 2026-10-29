@@ -4,7 +4,7 @@
 
 Une application Full-Stack complète permettant de générer des images dans le style des **Simpsons** en utilisant l'intelligence artificielle générative.
 
-Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diffusion XL (LoRA, LCM, ControlNet, Inpainting) et un **Frontend moderne (Next.js)** offrant une expérience utilisateur fluide avec galerie, caméra et éditeur graphique.
+Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diffusion 1.5 (LoRA, LCM, ControlNet, Inpainting) et un **Frontend moderne (Next.js)** offrant une expérience utilisateur fluide avec galerie, caméra et éditeur graphique.
 
 ---
 
@@ -32,8 +32,9 @@ Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diff
 * **Framework :** FastAPI (API REST asynchrone).
 * **Core IA :** PyTorch (CUDA), Diffusers (Hugging Face).
 * **Modèles :**
-    * Stable Diffusion 1.5 (Realistic Vision V6, 512x768, comme le notebook).
-    * LoRA personnalisé (Style Simpsons, entraîné sur base SD1.5, appliqué à 0.6).
+    * Stable Diffusion 1.5 (`stable-diffusion-v1-5/stable-diffusion-v1-5`, 512x512, comme `simpsonGenerator_FIXED.ipynb`).
+    * LoRA personnalisé (Style Simpsons, entraîné avec `simpsonGenerator_FIXED.ipynb` sur base SD1.5, appliqué à 1.0).
+    * Mode texte : même prompt, negative prompt, scheduler (`DPMSolverMultistep`), 30 steps, guidance 7.5 que le notebook (prompt `{nom} as a simpson character, yellow skin, cartoon style, …`).
     * LCM-LoRA SD1.5 (Accélération Latent Consistency).
     * ControlNet Canny SD1.5 (Détection de contours).
 * **Traitement d'image :** OpenCV, PIL, NumPy.
@@ -141,6 +142,8 @@ npm install
 copy .env.local.example .env.local
 npm run dev
 ```
+
+Le frontend ne tourne plus dans Docker : `docker compose` ne lance que l'API (et Redis/Postgres/worker avec `--profile async`).
 
 
 ---
