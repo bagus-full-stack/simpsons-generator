@@ -1,7 +1,7 @@
-"""Chargement des pipelines Stable Diffusion 1.5 (Realistic Vision).
+"""Chargement des pipelines Stable Diffusion 1.5.
 
 Repris de l'ancien simpsonGeneratorAPI.py (mêmes 4 pipelines, mêmes adaptateurs
-LoRA simpson + LCM), basé sur SD1.5 (Realistic Vision) comme le notebook, avec LCM-LoRA SD1.5 pour le mode turbo.
+LoRA simpson + LCM), basé sur SD1.5 comme le notebook, avec LCM-LoRA SD1.5 pour le mode turbo.
 Les chemins et modèles sont lus depuis la config au lieu d'être codés en dur.
 torch/diffusers ne sont importés qu'à l'intérieur de load_pipelines(), pour que
 le reste de l'API (et les tests) puisse s'importer sans dépendre d'un GPU ni
@@ -21,8 +21,8 @@ ML_MODELS: dict = {}
 
 # Adaptateurs LoRA effectivement chargés sur text_pipe (et donc partagés par les
 # autres pipelines, qui réutilisent les mêmes composants) — "simpson" peut être
-# absent si les poids sont introuvables ou incompatibles (ex: encore un LoRA
-# SD1.5 le temps de terminer le réentraînement sur base SDXL).
+# absent si les poids sont introuvables ou incompatibles (ex: LoRA entraîné sur une autre
+# famille de modèles que la base chargée).
 LOADED_ADAPTERS: list[str] = []
 
 MODE_TO_PIPELINE_KEY = {
@@ -41,9 +41,10 @@ def _lora_matches_unet(weights_path, expected_cross_attention_dim: int) -> bool:
 
     with safe_open(str(weights_path), framework="pt") as f:
         for key in f.keys():
-            if "attn2.to_k.lora_A" in key or "attn2.to_v.lora_A" in key:
+            # lora_A : format peft ; lora.down : ancien format (rang 4). Même forme [rang, dim d'entrée].
+            if "attn2.to_k" in key and ("lora_A" in key or "lora.down" in key):
                 return f.get_slice(key).get_shape()[-1] == expected_cross_attention_dim
-    return True
+    return False  # format inconnu : on refuse plutôt que de risquer de casser l'UNet partagé
 
 
 def load_pipelines() -> None:
@@ -88,11 +89,11 @@ def load_pipelines() -> None:
     elif not _lora_matches_unet(lora_weights, text_pipe.unet.config.cross_attention_dim):
         # load_lora_weights() utilise load_state_dict(strict=False, assign=True), qui assigne
         # les tenseurs du checkpoint par référence AVANT de lever l'erreur de shape mismatch —
-        # un LoRA incompatible (ex: encore entraîné sur SD1.5) laisse donc l'UNet partagé (utilisé
+        # un LoRA incompatible (ex: entraîné sur SDXL) laisse donc l'UNet partagé (utilisé
         # par tous les pipelines via text_pipe.components) avec des tenseurs meta (vides), qui
         # plantent au .to(device) suivant. Un check de shape en amont évite d'y toucher.
         log.warning(
-            "LoRA Simpsons (%s) incompatible avec %s (LoRA entraîné sur une autre base que SD1.5 ?) — "
+            "LoRA Simpsons (%s) incompatible avec %s (autre base, ou format de LoRA inconnu ?) — "
             "chargement ignoré, le style Simpsons ne sera pas appliqué.",
             lora_weights,
             settings.base_model_id,
@@ -143,13 +144,6 @@ def get_pipeline(mode: str):
     if pipe is None:
         raise RuntimeError(f"Pipeline '{key}' non chargée (SKIP_MODEL_LOAD actif, ou démarrage en cours).")
     return pipe
-
-
-def get_loaded_adapters() -> list[str]:
-    """Adaptateurs LoRA effectivement disponibles sur les pipelines chargées
-    (voir LOADED_ADAPTERS) — utilisé par generation.py pour n'activer que ce
-    qui a réellement été chargé (ex: "simpson" peut être absent)."""
-    return LOADED_ADAPTERS
 
 
 def unload_pipelines() -> None:

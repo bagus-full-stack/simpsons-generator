@@ -85,7 +85,8 @@ uvicorn app.main:app --reload
 ```
 
 Par défaut (`QUEUE_BACKEND=inline` dans `.env.example`), tout tourne dans un seul
-process comme avant, sans dépendance externe.
+process, sans dépendance externe : la génération s'exécute dans un thread dédié, un job à
+la fois. Les autres attendent en file et l'API répond tout de suite avec le statut `queued`.
 
 ### 2. Backend (Docker, alternative à l'étape 1)
 
@@ -107,8 +108,8 @@ docker compose --profile async up --build
 **Mode normal (défaut)** : un seul conteneur `api`. La génération tourne dans
 le process de l'API elle-même (`QUEUE_BACKEND=inline`), et l'historique des
 jobs est stocké en SQLite local au conteneur (`DATABASE_URL=sqlite:///./app.db`).
-Aucune dépendance externe. Simple, mais un seul GPU/process traite les
-requêtes une par une — pas de vraie parallélisation.
+Aucune dépendance externe. Simple : un seul GPU/process traite les
+jobs un par un (file d'attente en mémoire), sans vraie parallélisation.
 
 **Mode `--profile async`** : quatre conteneurs (`api`, `worker`, `redis`,
 `postgres`). L'API dépose le job dans une file Redis (`QUEUE_BACKEND=rq`) et
@@ -118,6 +119,18 @@ L'historique des jobs passe sur Postgres partagé (`DATABASE_URL=postgresql+psyc
 plutôt que SQLite, car `api` et `worker` sont deux conteneurs distincts qui
 doivent voir le même état des jobs. Permet de scaler en lançant plusieurs
 `worker` en parallèle pour traiter la file plus vite, sans toucher à l'API.
+
+Redis et Postgres ne publient aucun port vers l'hôte (RQ désérialise du pickle : ils ne doivent pas
+être joignables hors du réseau Docker).
+
+**Comportement de l'API**
+- Limites : `steps` de 1 à 75, description de 200 caractères, image de 8 Mo (erreur 422 ou 413 sinon).
+- Avec `API_KEYS` défini, tous les endpoints `/jobs/*` (POST et GET) exigent l'en-tête `X-API-Key`.
+- Les images d'entrée (upload, masque) sont supprimées une fois le job terminé ; seule l'image générée est gardée.
+- En cas d'échec, le client reçoit un message générique ; le détail est dans les logs du serveur.
+- `MODERATION_BLOCKLIST` filtre par mot entier (pluriel accepté) : « Hololive » passe, « children » est bloqué.
+- Stockage S3 : `S3_BUCKET` et `S3_PUBLIC_BASE_URL` sont obligatoires (pas d'URL signée, elle expirerait dans la galerie).
+- `python -m scripts.sweep_lora_scale "Homer" 1.0 0.8 0.6` compare plusieurs `LORA_SCALE` (même prompt, même seed).
 
 Voir `.env.example` pour le détail de chaque variable (modèle, stockage
 local/S3, modération, rate limit, Sentry...).
@@ -171,7 +184,7 @@ L'interface est divisée en **4 onglets intuitifs** :
 │   ├── pipelines.py             # Chargement des pipelines Stable Diffusion
 │   ├── generation.py            # Logique de génération (prompt, canny, inpaint...)
 │   ├── jobs.py                  # Exécution d'un job (génération + modération + stockage)
-│   ├── queue_backend.py         # File d'attente : inline (défaut) ou Redis/RQ
+│   ├── queue_backend.py         # File d'attente : inline (thread unique, défaut) ou Redis/RQ
 │   ├── worker.py                # Worker RQ séparé : python -m app.worker
 │   ├── storage.py               # Stockage des images : local (défaut) ou S3
 │   ├── security.py              # Auth par clé API + rate limiting
@@ -179,6 +192,7 @@ L'interface est divisée en **4 onglets intuitifs** :
 │   ├── db.py / models_db.py     # Base de données des jobs (SQLite ou Postgres)
 │   └── routes/jobs.py           # Endpoints /jobs/*
 │
+├── scripts/                     # sweep_lora_scale.py : compare les LORA_SCALE sur un même seed
 ├── tests/                       # Tests (SKIP_MODEL_LOAD=1, pas de GPU requis)
 ├── docker/Dockerfile            # Image API/worker (GPU, CUDA)
 ├── docker-compose.yml           # Stack locale (API, + Redis/Postgres/worker en option)

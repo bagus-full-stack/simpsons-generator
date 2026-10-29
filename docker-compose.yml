@@ -54,10 +54,9 @@ services:
               count: 1
               capabilities: [gpu]
 
+  # Pas de `ports:` sur redis/postgres : RQ désérialise du pickle, ils ne doivent pas être joignables hors de compose.
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     profiles: ["async"]
 
   postgres:
@@ -68,8 +67,6 @@ services:
       POSTGRES_PASSWORD: simpsons
     volumes:
       - pg_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     profiles: ["async"]
 
 volumes:

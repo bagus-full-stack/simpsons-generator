@@ -7,12 +7,13 @@ app.jobs.execute_job.
 from __future__ import annotations
 
 import io
+import math
 
 import numpy as np
 from PIL import Image, ImageOps
 
 from .config import get_settings
-from .pipelines import get_loaded_adapters, get_pipeline
+from .pipelines import LOADED_ADAPTERS, get_pipeline
 
 # Identiques à simpsonGenerator_FIXED.ipynb : style cartoon Simpsons, peau jaune.
 NEGATIVE_PROMPT = (
@@ -64,7 +65,8 @@ def _hires_fix(image: Image.Image, prompt: str, steps: int, guidance: float) -> 
         negative_prompt=NEGATIVE_PROMPT,
         image=image.resize(size, Image.Resampling.LANCZOS),
         strength=settings.hires_strength,
-        num_inference_steps=steps,
+        # int(steps × strength) doit rester >= 1, sinon diffusers refuse (steps=2, strength=0.4 -> 0).
+        num_inference_steps=max(steps, math.ceil(1 / settings.hires_strength)),
         guidance_scale=guidance,
     ).images[0]
 
@@ -81,7 +83,7 @@ def generate_image(
     pipe = get_pipeline(mode)
     full_prompt = build_prompt(prompt)
 
-    adapters = get_loaded_adapters()
+    adapters = LOADED_ADAPTERS
     weight_by_adapter = {"simpson": get_settings().lora_scale, "lcm": 1.0 if turbo else 0.0}
     if adapters:
         pipe.set_adapters(adapters, adapter_weights=[weight_by_adapter[a] for a in adapters])

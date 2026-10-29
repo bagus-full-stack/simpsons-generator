@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     enable_nsfw_filter: bool = True
     nsfw_model_id: str = "Falconsai/nsfw_image_detection"
     nsfw_threshold: float = 0.85
-    moderation_blocklist: Annotated[list[str], NoDecode] = ["child", "minor", "underage", "loli"]
+    moderation_blocklist: Annotated[list[str], NoDecode] = ["child", "children", "minor", "underage", "loli"]
 
     # --- Observabilité ---
     sentry_dsn: str | None = None

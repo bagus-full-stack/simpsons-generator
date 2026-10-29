@@ -16,6 +16,7 @@ qui pose le bon endroit dans le pipeline pour brancher un vrai fournisseur.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from .config import get_settings
@@ -32,9 +33,9 @@ class ModerationError(Exception):
 
 def check_prompt(prompt: str) -> None:
     settings = get_settings()
-    lowered = prompt.lower()
     for term in settings.moderation_blocklist:
-        if term.lower() in lowered:
+        # Mot entier (pluriel accepté) : "Hololive" ne doit pas déclencher "loli".
+        if re.search(rf"\b{re.escape(term)}s?\b", prompt, re.IGNORECASE):
             log.warning("Prompt rejeté par la liste de blocage.")
             raise ModerationError("Ce prompt enfreint la politique de contenu.")
 

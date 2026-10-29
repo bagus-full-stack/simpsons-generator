@@ -59,9 +59,10 @@ def execute_job(job_id: str) -> None:
         job.status = JobStatus.RUNNING.value
         db.commit()
 
-        storage = get_storage()
+        storage = None
         start = time.time()
         try:
+            storage = get_storage()
             check_prompt(job.prompt)
 
             input_bytes = storage.load(job.input_image_key) if job.input_image_key else None
@@ -94,12 +95,34 @@ def execute_job(job_id: str) -> None:
             job.error = str(exc)
             jobs_total.labels(mode=job.mode, status="rejected").inc()
 
-        except Exception as exc:  # noqa: BLE001 — on veut logger *toute* erreur d'inférence
+        except Exception:  # noqa: BLE001 — on veut logger *toute* erreur d'inférence
             log.exception("Échec du job %s", job_id)
             job.status = JobStatus.FAILED.value
-            job.error = str(exc)
+            job.error = "La génération a échoué."  # détails (chemins, CUDA...) dans les logs, pas chez le client
             jobs_total.labels(mode=job.mode, status="failed").inc()
 
         db.commit()
+
+        # Les entrées ne servent plus : on ne garde que l'image générée.
+        for key in (job.input_image_key, job.mask_image_key):
+            if key and storage:
+                try:
+                    storage.delete(key)
+                except Exception:  # noqa: BLE001 — un fichier orphelin ne doit pas faire échouer un job terminé
+                    log.warning("Suppression de %s impossible.", key)
+    finally:
+        db.close()
+
+
+def mark_job_failed(job, connection, exc_type, exc_value, traceback) -> None:
+    """Callback RQ (on_failure) : le worker a été tué avant que execute_job puisse noter l'échec."""
+    db = SessionLocal()
+    try:
+        row = db.get(Job, job.args[0])
+        if row is not None and row.status in (JobStatus.QUEUED.value, JobStatus.RUNNING.value):
+            row.status = JobStatus.FAILED.value
+            row.error = "La génération a été interrompue (timeout ou arrêt du worker)."
+            log.error("Job %s interrompu : %s: %s", row.id, exc_type.__name__, exc_value)
+            db.commit()
     finally:
         db.close()

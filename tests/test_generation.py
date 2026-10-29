@@ -20,14 +20,14 @@ class FakePipe:
         pass
 
 
-def _run(monkeypatch, turbo, hires):
+def _run(monkeypatch, turbo, hires, steps=30):
     calls = []
     pipes = {"text": FakePipe("text", calls), "img2img": FakePipe("img2img", calls)}
     monkeypatch.setattr(generation, "get_pipeline", pipes.__getitem__)
-    monkeypatch.setattr(generation, "get_loaded_adapters", lambda: [])
+    monkeypatch.setattr(generation, "LOADED_ADAPTERS", [])
     settings = Settings(hires_fix=hires)
     monkeypatch.setattr(generation, "get_settings", lambda: settings)
-    image = generation.generate_image("text", "Homer", steps=30, turbo=turbo)
+    image = generation.generate_image("text", "Homer", steps=steps, turbo=turbo)
     return image, calls
 
 
@@ -40,3 +40,8 @@ def test_hires_fix_upscales_then_refines(monkeypatch):
 def test_hires_fix_skipped_for_turbo_or_when_disabled(monkeypatch):
     assert [c[0] for c in _run(monkeypatch, turbo=True, hires=True)[1]] == ["text"]
     assert [c[0] for c in _run(monkeypatch, turbo=False, hires=False)[1]] == ["text"]
+
+
+def test_hires_fix_keeps_at_least_one_step(monkeypatch):
+    calls = _run(monkeypatch, turbo=False, hires=True, steps=2)[1]
+    assert int(calls[1][1]["num_inference_steps"] * calls[1][1]["strength"]) >= 1

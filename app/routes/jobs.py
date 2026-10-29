@@ -28,7 +28,8 @@ _rate = get_settings().rate_limit  # chaîne slowapi (ex: "20/minute"), résolue
 
 
 async def _save_upload(storage, upload: UploadFile, prefix: str) -> str:
-    data = await upload.read()
+    # Lecture bornée : un gros fichier ne doit pas être chargé en entier en RAM pour être refusé.
+    data = await upload.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Fichier trop volumineux (8 Mo max).")
     safe_name = (upload.filename or "upload").replace("/", "_")
@@ -54,9 +55,9 @@ async def submit_text_job(request: Request, payload: TextGenerationRequest, db: 
 @limiter.limit(_rate)
 async def submit_img2img_job(
     request: Request,
-    prompt: str = Form(...),
-    steps: int = Form(30),
-    strength: float = Form(0.75),
+    prompt: str = Form(..., min_length=1, max_length=200),
+    steps: int = Form(30, ge=1, le=75),
+    strength: float = Form(0.75, ge=0, le=1),
     turbo_mode: bool = Form(True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -73,8 +74,8 @@ async def submit_img2img_job(
 @limiter.limit(_rate)
 async def submit_pose_job(
     request: Request,
-    prompt: str = Form(...),
-    steps: int = Form(30),
+    prompt: str = Form(..., min_length=1, max_length=200),
+    steps: int = Form(30, ge=1, le=75),
     turbo_mode: bool = Form(True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -89,8 +90,8 @@ async def submit_pose_job(
 @limiter.limit(_rate)
 async def submit_inpaint_job(
     request: Request,
-    prompt: str = Form(...),
-    steps: int = Form(30),
+    prompt: str = Form(..., min_length=1, max_length=200),
+    steps: int = Form(30, ge=1, le=75),
     turbo_mode: bool = Form(True),
     image_file: UploadFile = File(...),
     mask_file: UploadFile = File(...),
@@ -111,7 +112,7 @@ async def submit_inpaint_job(
     return await _dispatch(db, job)
 
 
-@router.get("/{job_id}", response_model=JobOut)
+@router.get("/{job_id}", response_model=JobOut, dependencies=[Depends(require_api_key)])
 def get_job(job_id: str, db: Session = Depends(get_db)) -> JobOut:
     job = db.get(Job, job_id)
     if job is None:
@@ -119,9 +120,10 @@ def get_job(job_id: str, db: Session = Depends(get_db)) -> JobOut:
     return JobOut.model_validate(job)
 
 
-@router.get("", response_model=list[JobOut])
+@router.get("", response_model=list[JobOut], dependencies=[Depends(require_api_key)])
 def list_jobs(limit: int = 60, offset: int = 0, db: Session = Depends(get_db)) -> list[JobOut]:
     limit = max(1, min(limit, 100))
+    offset = max(0, offset)
     jobs = (
         db.query(Job)
         .filter(Job.status == "done")

@@ -33,4 +33,5 @@ def get_db() -> Iterator[Session]:
 def init_db() -> None:
     from . import models_db  # noqa: F401  (enregistre les modèles sur Base.metadata)
 
+    # shortcut: create_all ne migre pas les tables existantes ; passer à Alembic au premier changement de schéma.
     Base.metadata.create_all(bind=engine)
