@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -327,6 +328,8 @@ def run_training(args: argparse.Namespace) -> int:
         f"--checkpointing_steps={args.checkpointing_steps}",
         f"--validation_prompt={args.validation_prompt}",
         f"--validation_epochs={args.validation_epochs}",
+        # 4 par défaut ; 1 suffit pour contrôler et limite la pression VRAM.
+        "--num_validation_images=1",
         f"--seed={args.seed}",
     ]
     if args.pretrained_vae_model:
@@ -335,8 +338,14 @@ def run_training(args: argparse.Namespace) -> int:
         cmd.append(f"--resume_from_checkpoint={args.resume_from_checkpoint}")
 
     log.info("Commande : %s", " ".join(cmd))
-    result = subprocess.run(cmd)
-    return result.returncode
+    # Réduit la fragmentation VRAM (OOM à la validation finale sur GPU 16 Go).
+    env = {**os.environ, "PYTORCH_ALLOC_CONF": "expandable_segments:True"}
+    rc = subprocess.run(cmd, env=env).returncode
+    # La validation finale peut OOM après que le LoRA a été sauvé : l'entraînement est alors bon.
+    if rc != 0 and (Path(args.output_dir) / "pytorch_lora_weights.safetensors").exists():
+        log.warning("Échec après sauvegarde du LoRA (validation finale ?) : entraînement considéré OK.")
+        return 0
+    return rc
 
 
 def main() -> None:

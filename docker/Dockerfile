@@ -16,7 +16,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
-ENV PYTHONUNBUFFERED=1
+# Utilisateur non-root. Les dossiers montés en volume sont créés ici pour que les volumes
+# nommés (db_data, hf_cache) héritent de son propriétaire au premier démarrage.
+RUN useradd --create-home --uid 1000 app \
+    && mkdir -p /srv/data /srv/generated_simpsons /srv/hf_cache \
+    && chown -R app:app /srv
+USER app
+
+ENV PYTHONUNBUFFERED=1 \
+    HF_HOME=/srv/hf_cache
 EXPOSE 8000
+
+# 503 tant que les pipelines chargent : start_period large pour le 1er téléchargement des modèles.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=600s --retries=3 \
+    CMD python -c "import urllib.request as u; u.urlopen('http://localhost:8000/health/ready', timeout=4)"
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

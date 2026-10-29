@@ -57,7 +57,7 @@ async def submit_img2img_job(
     prompt: str = Form(...),
     steps: int = Form(30),
     strength: float = Form(0.75),
-    turbo_mode: bool = Form(False),
+    turbo_mode: bool = Form(True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> JobOut:
@@ -75,7 +75,7 @@ async def submit_pose_job(
     request: Request,
     prompt: str = Form(...),
     steps: int = Form(30),
-    turbo_mode: bool = Form(False),
+    turbo_mode: bool = Form(True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> JobOut:
@@ -91,7 +91,7 @@ async def submit_inpaint_job(
     request: Request,
     prompt: str = Form(...),
     steps: int = Form(30),
-    turbo_mode: bool = Form(False),
+    turbo_mode: bool = Form(True),
     image_file: UploadFile = File(...),
     mask_file: UploadFile = File(...),
     db: Session = Depends(get_db),

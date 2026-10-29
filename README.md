@@ -32,10 +32,10 @@ Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diff
 * **Framework :** FastAPI (API REST asynchrone).
 * **Core IA :** PyTorch (CUDA), Diffusers (Hugging Face).
 * **Modèles :**
-    * Stable Diffusion XL 1.0 (Base, 1024x1024 natif).
-    * LoRA personnalisé (Style Simpsons, entraîné sur base SDXL).
-    * LCM-LoRA SDXL (Accélération Latent Consistency).
-    * ControlNet Canny SDXL (Détection de contours).
+    * Stable Diffusion 1.5 (Realistic Vision V6, 512x768, comme le notebook).
+    * LoRA personnalisé (Style Simpsons, entraîné sur base SD1.5, appliqué à 0.6).
+    * LCM-LoRA SD1.5 (Accélération Latent Consistency).
+    * ControlNet Canny SD1.5 (Détection de contours).
 * **Traitement d'image :** OpenCV, PIL, NumPy.
 
 ### Frontend (TypeScript)
@@ -49,7 +49,7 @@ Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diff
 ## 📋 Prérequis
 
 * **Système :** Windows (recommandé) ou Linux.
-* **GPU :** Carte graphique NVIDIA recommandée (min 6-8Go VRAM pour SDXL) avec pilotes à jour.
+* **GPU :** Carte graphique NVIDIA recommandée (min 4-6Go VRAM pour SD1.5) avec pilotes à jour.
 * **Logiciels :**
     * **Python 3.10** (Impératif pour la compatibilité des dépendances IA).
     * **Node.js** (v18 ou supérieur).

@@ -27,16 +27,21 @@ class Settings(BaseSettings):
     skip_model_load: bool = False
 
     # --- Modèle ---
-    # SDXL (1024x1024 natif) : bien meilleure qualité que SD1.5, tout en gardant
-    # des temps de génération courts grâce à lcm_lora_id (voir pipelines.py).
-    base_model_id: str = "stabilityai/stable-diffusion-xl-base-1.0"
-    # Fix communautaire du VAE SDXL de base, qui produit des images noires/NaN en
-    # fp16 (le dtype utilisé sur CUDA). Laisser vide pour utiliser le VAE du modèle de base.
-    vae_model_id: str | None = "madebyollin/sdxl-vae-fp16-fix"
-    lcm_lora_id: str = "latent-consistency/lcm-lora-sdxl"
-    controlnet_model_id: str = "diffusers/controlnet-canny-sdxl-1.0"
-    image_resolution: int = 1024
+    # SD1.5 (Realistic Vision V6), identique au notebook d'entraînement/génération.
+    # Temps courts en mode turbo grâce à lcm_lora_id (voir pipelines.py).
+    base_model_id: str = "SG161222/Realistic_Vision_V6.0_B1_noVAE"
+    # Realistic Vision "noVAE" n'embarque pas de VAE : celui-ci est obligatoire
+    # (il évite aussi les taches noires en fp16).
+    vae_model_id: str | None = "stabilityai/sd-vae-ft-mse"
+    lcm_lora_id: str = "latent-consistency/lcm-lora-sdv1-5"
+    controlnet_model_id: str = "lllyasviel/control_v11p_sd15_canny"
+    image_resolution: int = 512
+    # Hauteur du mode texte : portrait 512x768 comme le notebook (meilleurs visages).
+    image_height: int = 768
     lora_dir: Path = BASE_DIR / "simpsons_lora_results"
+    lora_file: str = "sd15_lora.safetensors"
+    # Force du LoRA Simpsons (0.6 du notebook : garde la texture réaliste).
+    lora_scale: float = 0.6
     device: str = "auto"  # "auto" | "cuda" | "cpu"
 
     # --- Base de données (historique des jobs) ---

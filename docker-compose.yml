@@ -15,8 +15,9 @@ services:
       - "8000:8000"
     volumes:
       - ./simpsons_lora_results:/srv/simpsons_lora_results:ro
-      - generated_data:/srv/generated_simpsons
+      - ./generated_simpsons:/srv/generated_simpsons
       - db_data:/srv/data
+      - hf_cache:/srv/hf_cache
     depends_on:
       redis:
         condition: service_started
@@ -38,10 +39,13 @@ services:
     command: ["python", "-m", "app.worker"]
     volumes:
       - ./simpsons_lora_results:/srv/simpsons_lora_results:ro
-      - generated_data:/srv/generated_simpsons
+      - ./generated_simpsons:/srv/generated_simpsons
       - db_data:/srv/data
+      - hf_cache:/srv/hf_cache
     depends_on: [redis, postgres]
     profiles: ["async"]
+    healthcheck:
+      disable: true # pas de serveur HTTP dans le worker
     deploy:
       resources:
         reservations:
@@ -49,6 +53,18 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+
+  front:
+    build:
+      context: ../simpson-front
+      args:
+        # Lues par le navigateur, donc inlinées au build (pas au runtime).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY:-}
+    image: simpsons-front:latest
+    ports:
+      - "3000:3000"
+    depends_on: [api]
 
   redis:
     image: redis:7-alpine
@@ -69,6 +85,6 @@ services:
     profiles: ["async"]
 
 volumes:
-  generated_data:
   db_data:
+  hf_cache:
   pg_data:

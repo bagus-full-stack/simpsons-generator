@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class TextGenerationRequest(BaseModel):
     character_name: str = Field(min_length=1, max_length=200)
     steps: int = Field(default=30, ge=1, le=75)
-    turbo_mode: bool = False
+    turbo_mode: bool = True
 
 
 class JobOut(BaseModel):

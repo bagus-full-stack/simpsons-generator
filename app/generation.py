@@ -14,11 +14,21 @@ from PIL import Image, ImageOps
 from .config import get_settings
 from .pipelines import get_loaded_adapters, get_pipeline
 
-NEGATIVE_PROMPT = "realistic, photo, ugly, deformed, blurry, bad anatomy"
+# Identiques au notebook : rendu photoréaliste, déclenché par le mot-clé "sks simpson style".
+NEGATIVE_PROMPT = (
+    "cartoon, anime, 3d render, painting, drawing, illustration, "
+    "disfigured, bad anatomy, deformed face, black spots, noise, "
+    "grainy, low resolution, blurry"
+)
 
 
 def build_prompt(character_or_prompt: str) -> str:
-    return f"{character_or_prompt} as a simpson character, yellow skin, cartoon style, high quality"
+    return (
+        f"raw photo of {character_or_prompt}, sks simpson style, "
+        "detailed skin texture, pore details, hyper realistic, "
+        "soft cinematic lighting, photorealistic, 8k uhd, "
+        "dslr, sharp focus, high quality"
+    )
 
 
 def process_image_bytes(data: bytes) -> Image.Image:
@@ -62,7 +72,7 @@ def generate_image(
     full_prompt = build_prompt(prompt)
 
     adapters = get_loaded_adapters()
-    weight_by_adapter = {"simpson": 1.0, "lcm": 1.0 if turbo else 0.0}
+    weight_by_adapter = {"simpson": get_settings().lora_scale, "lcm": 1.0 if turbo else 0.0}
     if adapters:
         pipe.set_adapters(adapters, adapter_weights=[weight_by_adapter[a] for a in adapters])
 
@@ -70,8 +80,8 @@ def generate_image(
         pipe.scheduler = pipe.scheduler_lcm
         actual_steps, actual_guidance = 6, 1.5
     else:
-        pipe.scheduler = pipe.scheduler_dpm
-        actual_steps, actual_guidance = steps, 7.5
+        pipe.scheduler = pipe.scheduler_default
+        actual_steps, actual_guidance = steps, 5.0
 
     args: dict = {
         "prompt": full_prompt,
@@ -90,6 +100,9 @@ def generate_image(
                 raise ValueError("input_image_bytes requis pour le mode pose")
             edge_map = get_canny_image(process_image_bytes(input_image_bytes))
             args.update(image=edge_map, controlnet_conditioning_scale=1.0)
+            # ControlNet reste sur CPU hors utilisation (voir pipelines.py) pour laisser
+            # de la VRAM aux 3 autres modes sur un GPU 6 Go — remonté ici pour la durée du job.
+            pipe.controlnet.to(pipe.unet.device)
         elif mode == "inpaint":
             if input_image_bytes is None or mask_image_bytes is None:
                 raise ValueError("input_image_bytes et mask_image_bytes requis pour le mode inpaint")
@@ -99,12 +112,18 @@ def generate_image(
                 strength=0.95,
             )
         else:
-            resolution = get_settings().image_resolution
-            args.update(height=resolution, width=resolution)
+            settings = get_settings()
+            args.update(height=settings.image_height, width=settings.image_resolution)
 
         return pipe(**args).images[0]
     finally:
         # Toujours revenir au scheduler par défaut, même en cas d'erreur en plein
         # milieu d'une génération turbo (comportement repris de l'ancienne API).
-        if hasattr(pipe, "scheduler_dpm"):
-            pipe.scheduler = pipe.scheduler_dpm
+        if hasattr(pipe, "scheduler_default"):
+            pipe.scheduler = pipe.scheduler_default
+        if mode == "pose" and hasattr(pipe, "controlnet"):
+            import torch
+
+            pipe.controlnet.to("cpu")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
