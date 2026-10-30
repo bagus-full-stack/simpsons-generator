@@ -139,5 +139,11 @@ def test_blocked_prompt_is_refused_at_submit_time():
     with TestClient(app) as client:
         text = client.post("/jobs/text", json={"character_name": "a minor character"})
         assert text.status_code == 400 and "politique" in text.json()["detail"]
-        form = client.post("/jobs/img2img", data={"prompt": "loli"}, files={"file": ("a.png", _png(), "image/png")})
-        assert form.status_code == 400
+        png = ("a.png", _png(), "image/png")
+        forms = {"img2img": {"file": png}, "pose": {"file": png}, "inpaint": {"image_file": png, "mask_file": png}}
+        for route, files in forms.items():
+            response = client.post(f"/jobs/{route}", data={"prompt": "loli"}, files=files)
+            assert response.status_code == 400, route
+        metrics = client.get("/metrics").text
+        for mode in ("text", "img2img", "pose", "inpaint"):
+            assert f'simpsons_jobs_total{{mode="{mode}",status="rejected"}}' in metrics, mode  # refus comptés

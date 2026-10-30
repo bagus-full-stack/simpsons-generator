@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from ..config import get_settings
 from ..db import get_db
 from ..jobs import create_job
+from ..metrics import jobs_total
 from ..models_db import Job, JobStatus
 from ..moderation import ModerationError, check_prompt
 from ..queue_backend import get_executor
@@ -39,12 +40,13 @@ def check_capacity(db: Session = Depends(get_db)) -> None:
         raise HTTPException(status_code=503, detail="Serveur occupé, réessayez dans quelques minutes.")
 
 
-def _reject_blocked_prompt(prompt: str) -> None:
+def _reject_blocked_prompt(prompt: str, mode: str) -> None:
     # Refus tout de suite : sinon le visiteur attendrait son tour dans la file pour apprendre le rejet.
     # Le worker refait le contrôle (execute_job), au cas où un job arrive par une autre voie.
     try:
         check_prompt(prompt)
     except ModerationError as exc:
+        jobs_total.labels(mode=mode, status="rejected").inc()  # pas de job créé : sinon ce refus resterait invisible
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -76,7 +78,7 @@ async def _dispatch(db: Session, job: Job) -> JobOut:
 @router.post("/text", response_model=JobOut, dependencies=[Depends(require_api_key), Depends(check_capacity)])
 @limiter.limit(_rate)
 async def submit_text_job(request: Request, payload: TextGenerationRequest, db: Session = Depends(get_db)) -> JobOut:
-    _reject_blocked_prompt(payload.character_name)
+    _reject_blocked_prompt(payload.character_name, "text")
     job = create_job(db, mode="text", prompt=payload.character_name, steps=payload.steps, turbo=payload.turbo_mode)
     return await _dispatch(db, job)
 
@@ -92,7 +94,7 @@ async def submit_img2img_job(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> JobOut:
-    _reject_blocked_prompt(prompt)
+    _reject_blocked_prompt(prompt, "img2img")
     storage = get_storage()
     input_key = _store(storage, await _read_image(file))
     job = create_job(
@@ -111,7 +113,7 @@ async def submit_pose_job(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> JobOut:
-    _reject_blocked_prompt(prompt)
+    _reject_blocked_prompt(prompt, "pose")
     storage = get_storage()
     input_key = _store(storage, await _read_image(file))
     job = create_job(db, mode="pose", prompt=prompt, steps=steps, turbo=turbo_mode, input_image_key=input_key)
@@ -129,7 +131,7 @@ async def submit_inpaint_job(
     mask_file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> JobOut:
-    _reject_blocked_prompt(prompt)
+    _reject_blocked_prompt(prompt, "inpaint")
     # Les deux fichiers sont validés avant d'écrire quoi que ce soit : pas d'image orpheline si le masque est refusé.
     image_data = await _read_image(image_file)
     mask_data = await _read_image(mask_file)
