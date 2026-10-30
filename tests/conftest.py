@@ -14,3 +14,4 @@ os.environ.setdefault("DATABASE_URL", f"sqlite:///{(_tmp / 'app.db').as_posix()}
 os.environ.setdefault("OUTPUT_FOLDER", str(_tmp))
 os.environ.setdefault("API_KEYS", "")
 os.environ.setdefault("ENABLE_NSFW_FILTER", "false")
+os.environ.setdefault("RATE_LIMIT", "1000/minute")  # la suite poste plus de 20 fois par minute

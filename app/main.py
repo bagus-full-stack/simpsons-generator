@@ -18,9 +18,12 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from .config import get_settings
 from .db import init_db
+from .generation import warm_up_pipelines
+from .jobs import fail_interrupted_jobs
 from .logging_config import configure_logging
 from .metrics import CONTENT_TYPE_LATEST, generate_latest
-from .pipelines import ML_MODELS, load_pipelines, unload_pipelines
+from .moderation import warm_up
+from .pipelines import load_pipelines, unload_pipelines
 from .routes.jobs import router as jobs_router
 from .security import limiter
 
@@ -39,7 +42,12 @@ async def lifespan(app: FastAPI):
         )
 
     init_db()
-    load_pipelines()
+    # Avec QUEUE_BACKEND=rq, c'est le worker qui génère : l'API ne doit pas occuper la VRAM avec une 2e copie.
+    if settings.queue_backend == "inline":
+        fail_interrupted_jobs()
+        load_pipelines()
+        warm_up()
+        warm_up_pipelines()
 
     if settings.sentry_dsn:
         import sentry_sdk
@@ -76,13 +84,8 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health() -> dict:
+        # uvicorn n'ouvre le port qu'après le lifespan (modèles chargés) : si ça répond, l'API est prête.
         return {"status": "ok"}
-
-    @app.get("/health/ready")
-    def ready() -> Response:
-        if "text_pipe" not in ML_MODELS and not settings.skip_model_load:
-            return Response(content='{"status":"loading"}', media_type="application/json", status_code=503)
-        return Response(content='{"status":"ready"}', media_type="application/json")
 
     @app.get("/metrics")
     def metrics() -> Response:

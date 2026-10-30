@@ -39,7 +39,7 @@ def _lora_matches_unet(weights_path, expected_cross_attention_dim: int) -> bool:
     sur un checkpoint incompatible (voir commentaire dans load_pipelines)."""
     from safetensors import safe_open
 
-    with safe_open(str(weights_path), framework="pt") as f:
+    with safe_open(str(weights_path), framework="np") as f:  # np : seules les formes comptent, pas besoin de torch
         for key in f.keys():
             # lora_A : format peft ; lora.down : ancien format (rang 4). Même forme [rang, dim d'entrée].
             if "attn2.to_k" in key and ("lora_A" in key or "lora.down" in key):

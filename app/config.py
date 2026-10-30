@@ -39,9 +39,10 @@ class Settings(BaseSettings):
     image_height: int = 512
     lora_dir: Path = BASE_DIR / "simpsons_lora_results"
     lora_file: str = "sd15_lora.safetensors"
-    # Force du LoRA Simpsons. 0.8 : plus net que 1.0 (yeux/visages moins déformés) sans perdre
-    # le style (0.6 le dilue). Mesuré avec scripts/sweep_lora_scale.py ; à refaire pour un nouveau LoRA.
-    lora_scale: float = 0.8
+    # Force du LoRA Simpsons (rang 32). Au-dessus de 0.6 il écrase le prompt (Batman devient un visage de
+    # Marge) ; en dessous de 0.3 le style dérive vers un dessin vectoriel générique. 0.4 : style fidèle
+    # à la série. Mesuré avec scripts/sweep_lora_scale.py ; à refaire pour un nouveau LoRA.
+    lora_scale: float = 0.4
     # "Hires fix" (mode texte, hors turbo) : upscale puis 2e passe img2img légère.
     hires_fix: bool = True
     hires_scale: float = 1.5
@@ -52,7 +53,7 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{BASE_DIR / 'app.db'}"
 
     # --- File d'attente ---
-    queue_backend: str = "inline"  # "inline" (synchrone, sans dépendance) | "rq" (Redis)
+    queue_backend: str = "inline"  # "inline" (thread unique, sans dépendance) | "rq" (Redis)
     redis_url: str = "redis://localhost:6379/0"
 
     # --- Stockage des images ---

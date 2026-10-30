@@ -1,5 +1,7 @@
 import pytest
 
+from app import moderation
+from app.config import get_settings
 from app.moderation import ModerationError, check_prompt
 
 
@@ -26,3 +28,16 @@ def test_check_prompt_blocks_plural_and_children():
         check_prompt("two children playing")
     with pytest.raises(ModerationError):
         check_prompt("some minors")
+
+
+def test_warm_up_loads_classifier_only_when_filter_is_enabled(monkeypatch):
+    loaded = []
+    monkeypatch.setattr(moderation, "_get_classifier", lambda: loaded.append(1))
+    settings = get_settings()
+    monkeypatch.setattr(settings, "skip_model_load", False)
+    monkeypatch.setattr(settings, "enable_nsfw_filter", False)
+    moderation.warm_up()
+    assert loaded == []
+    monkeypatch.setattr(settings, "enable_nsfw_filter", True)
+    moderation.warm_up()
+    assert loaded == [1]

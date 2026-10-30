@@ -58,4 +58,4 @@ yarn-error.log*
 # Fichiers système
 .DS_Store
 Thumbs.db
-lora_sweep/
+lora_sweep*/

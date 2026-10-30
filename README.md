@@ -33,7 +33,7 @@ Le projet combine un **Backend Python (FastAPI)** puissant utilisant Stable Diff
 * **Core IA :** PyTorch (CUDA), Diffusers (Hugging Face).
 * **Modèles :**
     * Stable Diffusion 1.5 (`stable-diffusion-v1-5/stable-diffusion-v1-5`, 512x512, comme `simpsonGenerator_FIXED.ipynb`).
-    * LoRA personnalisé (Style Simpsons, entraîné avec `simpsonGenerator_FIXED.ipynb` sur base SD1.5, appliqué à 0.8).
+    * LoRA personnalisé (Style Simpsons, entraîné avec `simpsonGenerator_FIXED.ipynb` sur base SD1.5, appliqué à 0.4).
     * Mode texte : prompt, negative prompt, 30 steps et guidance 7.5 du notebook `simpsonGenerator_FIXED.ipynb`, avec trois améliorations de qualité : scheduler `DPMSolverMultistep` + sigmas Karras, VAE `stabilityai/sd-vae-ft-mse`, et « hires fix » (upscale x1.5 puis img2img à 0.4, réglable via `HIRES_FIX`, `HIRES_SCALE`, `HIRES_STRENGTH` ; désactivé en turbo).
     * LCM-LoRA SD1.5 (Accélération Latent Consistency).
     * ControlNet Canny SD1.5 (Détection de contours).
@@ -119,13 +119,21 @@ L'historique des jobs passe sur Postgres partagé (`DATABASE_URL=postgresql+psyc
 plutôt que SQLite, car `api` et `worker` sont deux conteneurs distincts qui
 doivent voir le même état des jobs. Permet de scaler en lançant plusieurs
 `worker` en parallèle pour traiter la file plus vite, sans toucher à l'API.
+Dans ce mode l'API ne charge aucun modèle (elle n'utilise pas la VRAM) : seul le `worker` charge SD1.5.
 
 Redis et Postgres ne publient aucun port vers l'hôte (RQ désérialise du pickle : ils ne doivent pas
 être joignables hors du réseau Docker).
 
 **Comportement de l'API**
-- Limites : `steps` de 1 à 75, description de 200 caractères, image de 8 Mo (erreur 422 ou 413 sinon).
+- Limites : `steps` de 1 à 75, description de 200 caractères, image de 8 Mo (erreur 422 ou 413 sinon). Un fichier qui n'est pas une image est refusé en 422 ; son nom est ignoré.
+- Un prompt interdit (`MODERATION_BLOCKLIST`) est refusé tout de suite en 400, sans passer par la file.
 - Avec `API_KEYS` défini, tous les endpoints `/jobs/*` (POST et GET) exigent l'en-tête `X-API-Key`.
+- File pleine : au-delà de 8 jobs en attente ou en cours, un nouveau POST reçoit 503 « Serveur occupé » (`MAX_PENDING_JOBS` dans `app/routes/jobs.py`).
+- Derrière un reverse proxy, mets `FORWARDED_ALLOW_IPS=<IP du proxy>` dans `.env` (voir `.env.example`) : sinon tous les
+  visiteurs partagent la limite de requêtes. Pas de `*` si le port 8000 est exposé directement.
+- Redémarrage (mode inline) : les jobs `queued`/`running` de l'ancien process sont marqués `failed` (« Interrompu par un redémarrage du serveur. »).
+- Démarrage : le classifieur NSFW est chargé avec SD1.5, puis deux générations à vide chauffent le GPU (le premier lancement
+  télécharge les modèles : Internet requis). L'API ne répond qu'une fois tout prêt : `/health` suffit comme contrôle.
 - Les images d'entrée (upload, masque) sont supprimées une fois le job terminé ; seule l'image générée est gardée.
 - En cas d'échec, le client reçoit un message générique ; le détail est dans les logs du serveur.
 - `MODERATION_BLOCKLIST` filtre par mot entier (pluriel accepté) : « Hololive » passe, « children » est bloqué.
@@ -199,7 +207,7 @@ L'interface est divisée en **4 onglets intuitifs** :
 │
 ├── training/                    # Fine-tuning du LoRA (hors service de prod)
 │   ├── train_simpsons_lora.py         # Script d'entraînement (remplace les notebooks). Dataset par défaut :
-│   │                                   # kostastokis/simpsons-faces (Kaggle, visages recadrés, sans upscale IA)
+│   │                                   # CasperLD/simpsons_cartoons_with_blip_captions_512_filtered (Hugging Face, 2574 scènes avec légendes)
 │   ├── extract_frames_from_videos.py  # Dataset HD alternatif : frames extraites de tes propres épisodes (ffmpeg)
 │   ├── simpsonGenerator*.ipynb  # Notebooks d'origine, conservés pour référence
 │   └── prompts.md               # Bibliothèque de prompts d'entraînement
@@ -238,7 +246,11 @@ Dans un notebook Kaggle (Accelerator : **GPU T4 x2**, Internet activé) :
 * Les 2 GPU sont détectés et utilisés automatiquement (`accelerate --multi_gpu`). Les T4 n'ont pas de bf16 : fp16.
 * Défauts SD1.5 : 512 px, batch 4 par GPU, rang 32, lr 1e-4, Min-SNR 5.0, 3000 steps. Un seul GPU : `--num-processes 1`.
 * Reprise après coupure de session : `--resume-from-checkpoint latest` (checkpoints toutes les 500 steps).
-* Le dataset (`kostastokis/simpsons-faces`) n'a pas de légende par image : 5 légendes génériques tournent en rotation.
+* Dataset par défaut : `CasperLD/simpsons_cartoons_with_blip_captions_512_filtered` (Hugging Face, 2574 scènes en 512 px,
+  une légende BLIP par image). Les légendes décrivent la scène, pas les noms de personnages : prompte avec des
+  descriptions (« a man in a dark suit with short brown hair »), pas avec « Elon Musk ». Autre dataset : `--dataset-id`.
+  Un LoRA entraîné sur des visages sans légende (`kostastokis/simpsons-faces`) écrasait le prompt ; refais un
+  `scripts.sweep_lora_scale` avec le nouveau LoRA, car un `LORA_SCALE` plus haut que 0.4 sera peut-être possible.
 
 Utiliser le nouveau LoRA : récupérer `pytorch_lora_weights.safetensors` depuis `/kaggle/working/simpsons_lora_results/`,
 le copier dans `simpsons_lora_results/` sous un autre nom (ex. `sd15_lora_r32.safetensors`, pour ne pas écraser l'ancien)

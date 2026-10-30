@@ -8,11 +8,7 @@
 GET {{baseUrl}}/health
 Accept: application/json
 
-### 2. Tester si les pipelines sont chargées
-GET {{baseUrl}}/health/ready
-Accept: application/json
-
-### 3. Déposer un job de génération texte (Homer)
+### 2. Déposer un job de génération texte (Homer)
 # Répond immédiatement avec un job_id + statut "queued"/"running", pas l'image.
 POST {{baseUrl}}/jobs/text
 Content-Type: application/json
@@ -24,7 +20,7 @@ X-API-Key: {{apiKey}}
     "turbo_mode": false
 }
 
-### 4. Déposer un job de génération texte (Marge, paramètres par défaut)
+### 3. Déposer un job de génération texte (Marge, paramètres par défaut)
 POST {{baseUrl}}/jobs/text
 Content-Type: application/json
 X-API-Key: {{apiKey}}
@@ -33,15 +29,15 @@ X-API-Key: {{apiKey}}
     "character_name": "{{nameMarge}}"
 }
 
-### 5. Consulter le statut d'un job — remplacer {job_id} par la réponse de 3. ou 4.
+### 4. Consulter le statut d'un job — remplacer {job_id} par la réponse de 2. ou 3.
 GET {{baseUrl}}/jobs/{job_id}
 Accept: application/json
 X-API-Key: {{apiKey}}
 
-### 6. Historique (jobs terminés, paginé)
+### 5. Historique (jobs terminés, paginé)
 GET {{baseUrl}}/jobs?limit=20
 Accept: application/json
 X-API-Key: {{apiKey}}
 
-### 7. Métriques Prometheus
+### 6. Métriques Prometheus
 GET {{baseUrl}}/metrics

@@ -114,6 +114,18 @@ def execute_job(job_id: str) -> None:
         db.close()
 
 
+def fail_interrupted_jobs() -> None:
+    """Mode inline, au démarrage : plus rien ne tourne, donc tout job queued/running est mort avec l'ancien process."""
+    with SessionLocal() as db:
+        pending = (JobStatus.QUEUED.value, JobStatus.RUNNING.value)
+        count = db.query(Job).filter(Job.status.in_(pending)).update(
+            {Job.status: JobStatus.FAILED.value, Job.error: "Interrompu par un redémarrage du serveur."}
+        )
+        db.commit()
+    if count:
+        log.warning("%d job(s) interrompu(s) par le redémarrage marqués en échec.", count)
+
+
 def mark_job_failed(job, connection, exc_type, exc_value, traceback) -> None:
     """Callback RQ (on_failure) : le worker a été tué avant que execute_job puisse noter l'échec."""
     db = SessionLocal()

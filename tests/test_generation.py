@@ -1,9 +1,11 @@
+import io
 from types import SimpleNamespace
 
+import pytest
 from PIL import Image
 
 from app import generation
-from app.config import Settings
+from app.config import Settings, get_settings
 
 
 class FakePipe:
@@ -45,3 +47,32 @@ def test_hires_fix_skipped_for_turbo_or_when_disabled(monkeypatch):
 def test_hires_fix_keeps_at_least_one_step(monkeypatch):
     calls = _run(monkeypatch, turbo=False, hires=True, steps=2)[1]
     assert int(calls[1][1]["num_inference_steps"] * calls[1][1]["strength"]) >= 1
+
+
+@pytest.mark.parametrize(
+    "turbo, steps, strength", [(True, 30, 0.1), (False, 49, 0.02), (False, 1, 0.5), (True, 30, 0.0)]
+)
+def test_img2img_strength_never_means_zero_steps(monkeypatch, turbo, steps, strength):
+    calls = []
+    monkeypatch.setattr(generation, "get_pipeline", {"img2img": FakePipe("img2img", calls)}.__getitem__)
+    monkeypatch.setattr(generation, "LOADED_ADAPTERS", [])
+    monkeypatch.setattr(generation, "get_settings", lambda: Settings())
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64)).save(buf, format="PNG")
+    generation.generate_image(
+        "img2img", "Homer", steps=steps, turbo=turbo, input_image_bytes=buf.getvalue(), strength=strength
+    )
+    args = calls[0][1]
+    assert int(args["num_inference_steps"] * args["strength"]) >= 1
+
+
+def test_warm_up_runs_text_then_img2img_unless_models_are_skipped(monkeypatch):
+    calls = []
+    monkeypatch.setattr(generation, "generate_image", lambda mode, *a, **k: calls.append(mode))
+    settings = get_settings()
+    monkeypatch.setattr(settings, "skip_model_load", True)
+    generation.warm_up_pipelines()
+    assert calls == []
+    monkeypatch.setattr(settings, "skip_model_load", False)
+    generation.warm_up_pipelines()
+    assert calls == ["text", "img2img"]

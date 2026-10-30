@@ -54,6 +54,12 @@ def image_to_png_bytes(image: Image.Image) -> bytes:
     return buf.getvalue()
 
 
+def _safe_strength(strength: float, steps: int) -> float:
+    # diffusers n'exécute que int(steps × strength) étapes : 0 étape plante ou rend du bruit
+    # (turbo = 6 étapes, donc une force < 0.17). L'epsilon évite int(49 * (1/49)) == 0.
+    return min(1.0, max(strength, (1 + 1e-6) / steps))
+
+
 def _hires_fix(image: Image.Image, prompt: str, steps: int, guidance: float) -> Image.Image:
     """Upscale puis img2img léger : affine les détails sans recomposer l'image."""
     settings = get_settings()
@@ -106,7 +112,7 @@ def generate_image(
         if mode == "img2img":
             if input_image_bytes is None:
                 raise ValueError("input_image_bytes requis pour le mode img2img")
-            args.update(image=process_image_bytes(input_image_bytes), strength=strength)
+            args.update(image=process_image_bytes(input_image_bytes), strength=_safe_strength(strength, actual_steps))
         elif mode == "pose":
             if input_image_bytes is None:
                 raise ValueError("input_image_bytes requis pour le mode pose")
@@ -121,7 +127,7 @@ def generate_image(
             args.update(
                 image=process_image_bytes(input_image_bytes),
                 mask_image=process_mask_bytes(mask_image_bytes),
-                strength=0.95,
+                strength=_safe_strength(0.95, actual_steps),
             )
         else:
             settings = get_settings()
@@ -142,3 +148,14 @@ def generate_image(
             pipe.controlnet.to("cpu")
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+
+
+def warm_up_pipelines() -> None:
+    """La 1re génération initialise CUDA/cuDNN (25 s mesurés, contre 1,6 s ensuite) : mieux vaut le payer
+    au démarrage que sur la requête du premier visiteur."""
+    if get_settings().skip_model_load:
+        return
+    generate_image("text", "warm up", steps=1, turbo=True)
+    blank = io.BytesIO()
+    Image.new("RGB", (64, 64)).save(blank, format="PNG")
+    generate_image("img2img", "warm up", steps=1, turbo=True, input_image_bytes=blank.getvalue())

@@ -21,13 +21,15 @@ Kaggle (2x T4, 15 Go chacun) : les 2 GPU sont détectés et utilisés automatiqu
 (accelerate --multi_gpu). T4 = pas de bf16, donc fp16 (défaut). Voir le README.
     python train_simpsons_lora.py --install-deps --output-dir /kaggle/working/simpsons_lora_results
 
-Dataset : kostastokis/simpsons-faces (Kaggle, visages Simpsons déjà recadrés,
-sans légende par image -> DEFAULT_PROMPTS en rotation). --skip-upscale est
-actif par défaut pour ce dataset : la passe "hires fix" (img2img SDXL, voir
+Dataset : CasperLD/simpsons_cartoons_with_blip_captions_512_filtered (Hugging
+Face, 2574 scènes de la série en 512x512, une légende BLIP par image). Les
+légendes décrivent la scène, pas les noms de personnages : le LoRA apprend
+"Simpsons + description", donc les prompts doivent décrire l'apparence.
+Autre dataset : --dataset-id (Kaggle ou Hugging Face, colonnes 'image' +
+'text' ou 'caption' ; sans légende, DEFAULT_PROMPTS tournent en rotation).
+--skip-upscale est actif par défaut : la passe "hires fix" (img2img SDXL, voir
 upscale_dataset()) repeint les images vers l'esthétique générique de SDXL et
-a dilué le style Simpsons lors d'un run précédent (sur Norod78/simpsons-blip-
-captions, un dataset de scènes complètes avec légendes BLIP génériques,
-utilisé un temps à la place de celui-ci).
+a dilué le style Simpsons lors d'un run précédent.
 
 Prérequis (si --install-deps n'est pas utilisé) :
     pip install accelerate transformers diffusers peft datasets pillow requests torch
@@ -111,7 +113,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--dataset-id",
-        default="kostastokis/simpsons-faces",
+        default="CasperLD/simpsons_cartoons_with_blip_captions_512_filtered",
         help="Dataset Kaggle (via kagglehub) ou Hugging Face (via `datasets`, colonnes 'image' + 'text').",
     )
     p.add_argument("--train-data-dir", default=str(CURRENT_DIR / "train_data"))
@@ -139,7 +141,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lr-scheduler", default="cosine_with_restarts")
     p.add_argument("--lr-warmup-steps", type=int, default=200)
     p.add_argument("--checkpointing-steps", type=int, default=500)
-    p.add_argument("--validation-prompt", default="a simpson character with yellow skin")
+    p.add_argument("--validation-prompt", default="a man in a dark suit standing in a living room, Simpsons")
     p.add_argument("--validation-epochs", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
@@ -233,9 +235,8 @@ def ensure_training_script(family: str) -> Path:
 
 
 def prepare_dataset_kaggle(dataset_id: str, train_data_dir: Path, force_redownload: bool) -> None:
-    """Dataset Kaggle (ex: kostastokis/simpsons-faces) : visages Simpsons déjà
-    recadrés, sans légende par image -> DEFAULT_PROMPTS en rotation, comme dans
-    l'ancien notebook."""
+    """Dataset Kaggle (ex: kostastokis/simpsons-faces, visages recadrés) sans légende
+    par image -> DEFAULT_PROMPTS en rotation, comme dans l'ancien notebook."""
     import kagglehub
 
     log.info("Téléchargement du dataset Kaggle '%s'...", dataset_id)
