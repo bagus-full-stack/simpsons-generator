@@ -1,0 +1,32 @@
+# Déploiement Coolify (VPS CPU, sans GPU). API seule, file "inline", SQLite.
+# Les variables viennent de l'onglet Environment Variables de Coolify.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    environment:
+      ENVIRONMENT: production
+      DEVICE: cpu
+      HIRES_FIX: ${HIRES_FIX:-false} # trop lent sur CPU
+      LORA_FILE: ${LORA_FILE:-sd15_lora.safetensors}
+      LORA_SCALE: ${LORA_SCALE:-0.4}
+      API_KEYS: ${API_KEYS:?API_KEYS requis en production}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:?URL du front requise}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?URL publique de l'API requise}
+      RATE_LIMIT: ${RATE_LIMIT:-20/minute}
+      # shortcut: "*" ok car le port 8000 n'est pas publié, seul Traefik y accède.
+      FORWARDED_ALLOW_IPS: "*"
+      DATABASE_URL: sqlite:////srv/data/app.db
+    expose:
+      - "8000"
+    volumes:
+      - ./simpsons_lora_results:/srv/simpsons_lora_results:ro
+      - generated:/srv/generated_simpsons
+      - db_data:/srv/data
+      - hf_cache:/srv/hf_cache
+
+volumes:
+  generated:
+  db_data:
+  hf_cache:
