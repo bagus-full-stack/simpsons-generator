@@ -103,7 +103,7 @@ async def submit_text_job(
 @limiter.limit(_rate)
 async def submit_img2img_job(
     request: Request,
-    prompt: str = Form(..., min_length=1, max_length=200),
+    prompt: str = Form(..., min_length=1, max_length=300),
     steps: int = Form(30, ge=1, le=75),
     strength: float = Form(0.75, ge=0, le=1),
     turbo_mode: bool = Form(True),
@@ -131,7 +131,7 @@ async def submit_img2img_job(
 @limiter.limit(_rate)
 async def submit_pose_job(
     request: Request,
-    prompt: str = Form(..., min_length=1, max_length=200),
+    prompt: str = Form(..., min_length=1, max_length=300),
     steps: int = Form(30, ge=1, le=75),
     turbo_mode: bool = Form(True),
     file: UploadFile = File(...),
@@ -151,7 +151,7 @@ async def submit_pose_job(
 @limiter.limit(_rate)
 async def submit_inpaint_job(
     request: Request,
-    prompt: str = Form(..., min_length=1, max_length=200),
+    prompt: str = Form(..., min_length=1, max_length=300),
     steps: int = Form(30, ge=1, le=75),
     turbo_mode: bool = Form(True),
     image_file: UploadFile = File(...),

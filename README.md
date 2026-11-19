@@ -125,7 +125,8 @@ Redis et Postgres ne publient aucun port vers l'hôte (RQ désérialise du pickl
 être joignables hors du réseau Docker).
 
 **Comportement de l'API**
-- Limites : `steps` de 1 à 75, description de 200 caractères, image de 8 Mo (erreur 422 ou 413 sinon). Un fichier qui n'est pas une image est refusé en 422 ; son nom est ignoré.
+- Limites : `steps` de 1 à 75, description de 300 caractères, image de 8 Mo (erreur 422 ou 413 sinon). Un fichier qui n'est pas une image est refusé en 422 ; son nom est ignoré.
+- `GET /jobs` ne renvoie que les jobs terminés créés avec le même en-tête `X-Client-Id` (identifiant généré par le navigateur) ; sans cet en-tête, la liste est vide. `GET /jobs/{id}` reste accessible à qui connaît l'id.
 - Un prompt interdit (`MODERATION_BLOCKLIST`) est refusé tout de suite en 400, sans passer par la file.
 - Avec `API_KEYS` défini, tous les endpoints `/jobs/*` (POST et GET) exigent l'en-tête `X-API-Key`.
 - File pleine : au-delà de 8 jobs en attente ou en cours, un nouveau POST reçoit 503 « Serveur occupé » (`MAX_PENDING_JOBS` dans `app/routes/jobs.py`).
@@ -151,6 +152,12 @@ SKIP_MODEL_LOAD=1 pytest
 ```
 
 ---
+
+### 3. Déploiement Coolify (VPS CPU, sans GPU)
+
+`docker-compose.coolify.yml` construit `docker/Dockerfile.cpu` (API seule, file inline, SQLite). Dans Coolify : build pack *Docker Compose*, domaine sur le service `api` (port 8000), et les variables obligatoires `API_KEYS`, `CORS_ALLOW_ORIGINS` (URL du front) et `PUBLIC_BASE_URL` (URL publique de l'API). Les volumes nommés `generated` (images), `db_data` (SQLite) et `hf_cache` (modèles) survivent aux redéploiements.
+
+Sur CPU : `HIRES_FIX=false` par défaut, une génération en mode Turbo dure ≈ 1 min 30 et ≈ 7 min en mode normal. Un push sur `master` redéploie l'app via un webhook GitHub ; le redéploiement recharge les modèles (2 à 3 min) et interrompt une génération en cours.
 
 ## 🖥️ Frontend
 
@@ -203,6 +210,8 @@ L'interface est divisée en **4 onglets intuitifs** :
 ├── scripts/                     # sweep_lora_scale.py : compare les LORA_SCALE sur un même seed
 ├── tests/                       # Tests (SKIP_MODEL_LOAD=1, pas de GPU requis)
 ├── docker/Dockerfile            # Image API/worker (GPU, CUDA)
+├── docker/Dockerfile.cpu        # Image CPU (python slim + torch CPU, ≈ 2,3 Go) pour un VPS sans GPU
+├── docker-compose.coolify.yml   # Déploiement Coolify (VPS CPU, API seule, volumes persistants)
 ├── docker-compose.yml           # Stack locale (API, + Redis/Postgres/worker en option)
 │
 ├── training/                    # Fine-tuning du LoRA (hors service de prod)
