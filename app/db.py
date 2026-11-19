@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
@@ -35,3 +35,8 @@ def init_db() -> None:
 
     # shortcut: create_all ne migre pas les tables existantes ; passer à Alembic au premier changement de schéma.
     Base.metadata.create_all(bind=engine)
+    # shortcut: colonne ajoutée à la main pour les bases déjà déployées ; Alembic au prochain changement.
+    if "client_id" not in {c["name"] for c in inspect(engine).get_columns("jobs")}:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN client_id VARCHAR(64)"))
+            conn.execute(text("CREATE INDEX ix_jobs_client_id ON jobs (client_id)"))

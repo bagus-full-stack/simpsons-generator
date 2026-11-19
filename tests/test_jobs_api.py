@@ -58,6 +58,21 @@ def test_list_jobs_only_returns_done_jobs():
         assert all(job["status"] == "done" for job in response.json())
 
 
+def test_list_jobs_only_returns_the_callers_jobs():
+    with TestClient(app) as client:
+        db = SessionLocal()
+        mine = create_job(db, mode="text", prompt="Homer", client_id="client-a")
+        theirs = create_job(db, mode="text", prompt="Marge", client_id="client-b")
+        for job in (mine, theirs):
+            job.status = "done"
+        db.commit()
+        mine_id = mine.id
+        db.close()
+        ids = lambda headers: {j["id"] for j in client.get("/jobs", headers=headers).json()}  # noqa: E731
+        assert ids({"X-Client-Id": "client-a"}) == {mine_id}
+        assert ids({}) == set()
+
+
 def test_upload_over_limit_is_rejected_with_413():
     with TestClient(app) as client:
         big = b"0" * (8 * 1024 * 1024 + 1)

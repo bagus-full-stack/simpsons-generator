@@ -9,7 +9,7 @@ Le client va ensuite consulter GET /jobs/{id} jusqu'à ce que le statut soit
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from PIL import Image
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -31,6 +31,10 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 Mo
 # shortcut: ~27 s par job en mode normal, donc 8 jobs = ~4 min d'attente, sous les 5 min de patience du front.
 MAX_PENDING_JOBS = 8
 _rate = get_settings().rate_limit  # chaîne slowapi (ex: "20/minute"), résolue au chargement du module
+
+
+def get_client_id(x_client_id: str | None = Header(default=None, max_length=64)) -> str | None:
+    return x_client_id
 
 
 def check_capacity(db: Session = Depends(get_db)) -> None:
@@ -77,9 +81,21 @@ async def _dispatch(db: Session, job: Job) -> JobOut:
 
 @router.post("/text", response_model=JobOut, dependencies=[Depends(require_api_key), Depends(check_capacity)])
 @limiter.limit(_rate)
-async def submit_text_job(request: Request, payload: TextGenerationRequest, db: Session = Depends(get_db)) -> JobOut:
+async def submit_text_job(
+    request: Request,
+    payload: TextGenerationRequest,
+    db: Session = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
+) -> JobOut:
     _reject_blocked_prompt(payload.character_name, "text")
-    job = create_job(db, mode="text", prompt=payload.character_name, steps=payload.steps, turbo=payload.turbo_mode)
+    job = create_job(
+        db,
+        mode="text",
+        prompt=payload.character_name,
+        steps=payload.steps,
+        turbo=payload.turbo_mode,
+        client_id=client_id,
+    )
     return await _dispatch(db, job)
 
 
@@ -93,12 +109,20 @@ async def submit_img2img_job(
     turbo_mode: bool = Form(True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ) -> JobOut:
     _reject_blocked_prompt(prompt, "img2img")
     storage = get_storage()
     input_key = _store(storage, await _read_image(file))
     job = create_job(
-        db, mode="img2img", prompt=prompt, steps=steps, turbo=turbo_mode, strength=strength, input_image_key=input_key
+        db,
+        mode="img2img",
+        prompt=prompt,
+        steps=steps,
+        turbo=turbo_mode,
+        strength=strength,
+        input_image_key=input_key,
+        client_id=client_id,
     )
     return await _dispatch(db, job)
 
@@ -112,11 +136,14 @@ async def submit_pose_job(
     turbo_mode: bool = Form(True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ) -> JobOut:
     _reject_blocked_prompt(prompt, "pose")
     storage = get_storage()
     input_key = _store(storage, await _read_image(file))
-    job = create_job(db, mode="pose", prompt=prompt, steps=steps, turbo=turbo_mode, input_image_key=input_key)
+    job = create_job(
+        db, mode="pose", prompt=prompt, steps=steps, turbo=turbo_mode, input_image_key=input_key, client_id=client_id
+    )
     return await _dispatch(db, job)
 
 
@@ -130,6 +157,7 @@ async def submit_inpaint_job(
     image_file: UploadFile = File(...),
     mask_file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
 ) -> JobOut:
     _reject_blocked_prompt(prompt, "inpaint")
     # Les deux fichiers sont validés avant d'écrire quoi que ce soit : pas d'image orpheline si le masque est refusé.
@@ -146,6 +174,7 @@ async def submit_inpaint_job(
         turbo=turbo_mode,
         input_image_key=input_key,
         mask_image_key=mask_key,
+        client_id=client_id,
     )
     return await _dispatch(db, job)
 
@@ -159,12 +188,20 @@ def get_job(job_id: str, db: Session = Depends(get_db)) -> JobOut:
 
 
 @router.get("", response_model=list[JobOut], dependencies=[Depends(require_api_key)])
-def list_jobs(limit: int = 60, offset: int = 0, db: Session = Depends(get_db)) -> list[JobOut]:
+def list_jobs(
+    limit: int = 60,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    client_id: str | None = Depends(get_client_id),
+) -> list[JobOut]:
+    # Sans identifiant client, rien : la liste ne montre jamais les jobs des autres.
+    if not client_id:
+        return []
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
     jobs = (
         db.query(Job)
-        .filter(Job.status == "done")
+        .filter(Job.status == "done", Job.client_id == client_id)
         .order_by(Job.created_at.desc())
         .offset(offset)
         .limit(limit)

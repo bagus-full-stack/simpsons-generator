@@ -39,6 +39,9 @@ class Job(Base):
     input_image_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     mask_image_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
+    # Id aléatoire généré par le navigateur (X-Client-Id) : clé secrète pour lister ses propres jobs.
+    client_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
     status: Mapped[str] = mapped_column(String(16), default=JobStatus.QUEUED.value)
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

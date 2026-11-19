@@ -31,8 +31,10 @@ def create_job(
     strength: float = 0.8,
     input_image_key: str | None = None,
     mask_image_key: str | None = None,
+    client_id: str | None = None,
 ) -> Job:
     job = Job(
+        client_id=client_id,
         mode=mode,
         prompt=prompt,
         steps=steps,
