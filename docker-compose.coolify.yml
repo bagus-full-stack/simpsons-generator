@@ -4,7 +4,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.cpu
     environment:
       ENVIRONMENT: production
       DEVICE: cpu

@@ -12,3 +12,8 @@ generated_simpsons
 *.db
 .env
 .env.local
+lora_sweep*
+simpsons_lora_results
+scripts
+testAPI.http
+.serena
